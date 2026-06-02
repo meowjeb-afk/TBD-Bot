@@ -36,12 +36,7 @@ def _build_bot(db) -> commands.Bot:
         try:
             guild = discord.Object(id=DEV_GUILD_ID)
             
-            # 1. Clear out the global tree cache by syncing an empty list globally
-            bot.tree.clear_commands(guild=None)
-            await bot.tree.sync(guild=None)
-            logger.info("Old global command cache cleared!")
-            
-            # 2. Sync exclusively to your private developer guild for instant updates
+            # This is all you need for instant private server testing!
             bot.tree.copy_global_to(guild=guild)
             synced = await bot.tree.sync(guild=guild)
             
