@@ -35,8 +35,15 @@ def _build_bot(db) -> commands.Bot:
     async def setup_hook():
         try:
             guild = discord.Object(id=DEV_GUILD_ID)
+            
+            # 1. Clear out the global tree cache to eliminate duplicate UI listings
+            bot.tree.clear(guild=None)
+            await bot.tree.sync(guild=None)
+            
+            # 2. Sync exclusively to your private developer guild for instant updates
             bot.tree.copy_global_to(guild=guild)
             synced = await bot.tree.sync(guild=guild)
+            
             logger.info(f"Instant Guild Sync Complete! Synced {len(synced)} commands.")
         except Exception as e:
             logger.exception(f"Failed to sync slash commands: {e}")
