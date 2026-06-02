@@ -1,2 +1,2 @@
 # TBD-Bot
-Trauma Beanies Dictionart
+Trauma Beanies Dictionary
