@@ -29,15 +29,15 @@ async def lifespan(app: FastAPI):
     logger.info("✅ Attempting to connect to MongoDB Atlas cluster.")
 
     # Update your client initialization in main.py
-client = AsyncIOMotorClient(
-    mongo_uri,
-    tls=True,
-    tlsAllowInvalidCertificates=True,
-    serverSelectionTimeoutMS=5000, # Reduced to 5s to fail/retry faster
-    connectTimeoutMS=5000,
-    directConnection=False # Keep False for Replica Sets
-)
+# ... inside lifespan ...
+    client = AsyncIOMotorClient(
+        mongo_uri,
+        tls=True,
+        tlsAllowInvalidCertificates=True,
+        serverSelectionTimeoutMS=5000
+    )
     
+    # Ensure 'db' is at the same indentation level as 'client'
     db = client.tbd_dictionary
     
     # Get Discord Token
