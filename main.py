@@ -31,9 +31,7 @@ async def lifespan(app: FastAPI):
     # Update your client initialization in main.py
     client = AsyncIOMotorClient(
         mongo_uri,
-        tls=True,
-        tlsAllowInvalidCertificates=True,
-        tlsAllowInvalidHostnames=True, # Added to handle cloud-specific hostname mismatches
+        tls=False,
         serverSelectionTimeoutMS=20000
 )
     
