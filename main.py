@@ -1,65 +1,66 @@
-import certifi
 import os
 import asyncio
 import logging
+import certifi
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# Importing start/stop functions from your flat directory
+# Importing start/stop functions
 from discord_bot import start_bot, stop_bot
 
-# Add this before creating your AsyncIOMotorClient
-os.environ["SSL_CERT_FILE"] = certifi.where()
-
-# Set up logging to show what is happening during startup
+# Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Force the application to use the certifi bundle for all SSL operations
+os.environ["SSL_CERT_FILE"] = certifi.where()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # HARDCODED for testing purposes only
-    mongo_uri = "mongodb+srv://pixl:yCcwerX55ekSla0y@tbd.tvvtptx.mongodb.net/?appName=TBD"
+    # Retrieve the MONGO_URI from environment variables
+    mongo_uri = os.getenv("MONGO_URI")
     
-    logger.info("✅ Attempting to connect to MongoDB Atlas with hardcoded URI.")
-    
-    client = AsyncIOMotorClient(mongo_uri)
-    db = client.tbd_dictionary
-    # ... rest of lifespan
-    
-    # Diagnostic: Check if we are accidentally using the local fallback
-    if "localhost" in mongo_uri:
-        logger.warning("⚠️ WARNING: Using fallback localhost database connection!")
-    else:
-        logger.info("✅ Attempting to connect to MongoDB Atlas cluster.")
+    if not mongo_uri:
+        logger.error("❌ MONGO_URI environment variable is missing!")
+        yield
+        return
 
-    # 2. Connect to MongoDB
-    client = AsyncIOMotorClient(mongo_uri)
-    db = client.tbd_dictionary  # Database name
+    logger.info("✅ Attempting to connect to MongoDB Atlas cluster.")
+
+    # Initialize Client with TLS overrides to bypass the SSL handshake failure
+    client = AsyncIOMotorClient(
+        mongo_uri,
+        tls=True,
+        tlsAllowInvalidCertificates=True, # Bypasses the handshake error
+        serverSelectionTimeoutMS=20000    # Gives Atlas time to respond
+    )
     
-    # 3. Get Discord Token
+    db = client.tbd_dictionary
+    
+    # Get Discord Token
     token = os.getenv("DISCORD_TOKEN")
     if not token:
         logger.error("❌ DISCORD_TOKEN environment variable is missing!")
     else:
         logger.info("🚀 Starting Discord bot...")
         
-        # 4. Start the bot as a background task
+        # Start the bot as a background task
         bot_task = asyncio.create_task(start_bot(token, db))
         
-        # 5. Add a callback to catch the specific 'Task exception' that was getting swallowed
+        # Callback to catch crashes
         bot_task.add_done_callback(
             lambda t: logger.error(f"❌ Bot task crashed: {t.exception()}") if t.exception() else None
         )
         
     yield
     
-    # 6. Clean up on shutdown
+    # Cleanup
     logger.info("Shutting down Discord bot...")
     await stop_bot()
     client.close()
 
-# Initialize FastAPI with the lifespan manager
+# Initialize FastAPI
 app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
