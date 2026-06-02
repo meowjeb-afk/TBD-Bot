@@ -71,13 +71,18 @@ def _build_bot() -> commands.Bot:
         logger.info(f"Discord bot ready as {bot.user} running across {len(bot.guilds)} guild(s)")
 
     @bot.tree.command(name="add", description="Add a word to the TBD dictionary")
-    @app_commands.describe(word="The word to add", definition="What does it mean?")
     async def add_cmd(interaction: discord.Interaction, word: str, definition: str):
         await interaction.response.defer(thinking=True)
+        
+        # 2. Use the database handle attached to the bot
+        # This bypasses the unreliable global _db variable entirely
+        db_handle = interaction.client.db
+        
         word_clean = word.strip()
         word_lower = word_clean.lower()
 
-        existing = await _db.words.find_one({"word_lower": word_lower})
+        existing = await db_handle.words.find_one({"word_lower": word_lower})
+        # ... (rest of your logic using db_handle)
         if existing:
             await interaction.followup.send(f"`{word_clean}` is already in the dictionary, meow.")
             return
@@ -187,12 +192,13 @@ def _build_bot() -> commands.Bot:
 
     return bot
 
-
 async def start_bot(token: str, db):
     """Start the Discord bot. Called from FastAPI startup."""
-    global _bot, _db
-    _db = db
-    _bot = _build_bot()
+    global _bot
+    
+    # Pass the live 'db' handle directly into the builder
+    _bot = _build_bot(db)
+    
     try:
         await _bot.start(token)
     except Exception as e:
