@@ -14,8 +14,11 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 1. Get the connection string from your Render Environment variables
+    # DEBUG: Print ALL environment keys found by the app
+    logger.info(f"DEBUG: Found environment keys: {list(os.environ.keys())}")
+    
     mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+    # ... rest of your code
     
     # Diagnostic: Check if we are accidentally using the local fallback
     if "localhost" in mongo_uri:
