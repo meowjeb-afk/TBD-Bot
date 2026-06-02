@@ -1,10 +1,8 @@
 """Discord bot for TBD Dictionary. Runs as background task inside FastAPI."""
-import os
 import io
 import logging
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
 import discord
 from discord import app_commands
@@ -15,7 +13,6 @@ from image_generator import generate_card_image, GENERATED_DIR
 logger = logging.getLogger(__name__)
 
 _bot: commands.Bot | None = None
-_db = None  # motor db handle, set on start
 _ready = False
 
 
@@ -23,72 +20,50 @@ def is_running() -> bool:
     return _ready and _bot is not None and not _bot.is_closed()
 
 
-def bot_user_name() -> str | None:
-    if _bot and _bot.user:
-        return f"{_bot.user.name}"
-    return None
-
-
-def guild_count() -> int:
-    if _bot:
-        return len(_bot.guilds)
-    return 0
-
-
-def invite_url() -> str | None:
-    if _bot and _bot.user:
-        return (
-            f"https://discord.com/api/oauth2/authorize?client_id={_bot.user.id}"
-            "&permissions=2147485696&scope=bot%20applications.commands"
-        )
-    return None
-
-
-def _build_bot() -> commands.Bot:
+def _build_bot(db) -> commands.Bot:
+    """Builds the bot and attaches the database handle directly to it."""
     intents = discord.Intents.default()
     intents.message_content = False
     bot = commands.Bot(command_prefix="!", intents=intents)
 
-    # === UPDATE THIS REPLACEMENT WITH YOUR ACTUAL DISCORD SERVER ID ===
-    DEV_GUILD_ID = 1469032638395191298  # <-- Replace with your server ID!
-    # ==================================================================
+    # Attach the live cloud database handle to the bot object
+    bot.db = db
+
+    # === UPDATE THIS WITH YOUR ACTUAL DISCORD SERVER ID ===
+    DEV_GUILD_ID = 1469032638395191298 
+    # ======================================================
 
     @bot.event
     async def setup_hook():
         try:
             guild = discord.Object(id=DEV_GUILD_ID)
-            # Copy our global slash commands directly into your test guild context
             bot.tree.copy_global_to(guild=guild)
             synced = await bot.tree.sync(guild=guild)
-            logger.info(f"Instant Guild Sync Complete! Synced {len(synced)} commands straight to server {DEV_GUILD_ID}.")
+            logger.info(f"Instant Guild Sync Complete! Synced {len(synced)} commands.")
         except Exception as e:
-            logger.exception(f"Failed to sync slash commands in setup_hook: {e}")
+            logger.exception(f"Failed to sync slash commands: {e}")
 
     @bot.event
     async def on_ready():
         global _ready
         _ready = True
-        logger.info(f"Discord bot ready as {bot.user} running across {len(bot.guilds)} guild(s)")
+        logger.info(f"Discord bot ready as {bot.user}")
 
     @bot.tree.command(name="add", description="Add a word to the TBD dictionary")
+    @app_commands.describe(word="The word to add", definition="What does it mean?")
     async def add_cmd(interaction: discord.Interaction, word: str, definition: str):
         await interaction.response.defer(thinking=True)
-        
-        # 2. Use the database handle attached to the bot
-        # This bypasses the unreliable global _db variable entirely
-        db_handle = interaction.client.db
-        
+        db = interaction.client.db
         word_clean = word.strip()
         word_lower = word_clean.lower()
 
-        existing = await db_handle.words.find_one({"word_lower": word_lower})
-        # ... (rest of your logic using db_handle)
+        existing = await db.words.find_one({"word_lower": word_lower})
         if existing:
-            await interaction.followup.send(f"`{word_clean}` is already in the dictionary, meow.")
+            await interaction.followup.send(f"`{word_clean}` is already in the dictionary.")
             return
 
         posted_by = interaction.user.display_name
-        count = await _db.words.count_documents({})
+        count = await db.words.count_documents({})
         pose_index = count % 6
 
         try:
@@ -115,7 +90,7 @@ def _build_bot() -> commands.Bot:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "pose_index": pose_index,
         }
-        await _db.words.insert_one(doc)
+        await db.words.insert_one(doc)
 
         path = GENERATED_DIR / image_file
         with open(path, "rb") as f:
@@ -126,79 +101,43 @@ def _build_bot() -> commands.Bot:
             file=file,
         )
 
-    @bot.tree.command(name="lookup", description="Look up a word in the TBD dictionary")
-    @app_commands.describe(word="The word to look up")
+    @bot.tree.command(name="lookup", description="Look up a word")
     async def lookup_cmd(interaction: discord.Interaction, word: str):
         await interaction.response.defer(thinking=True)
-        doc = await _db.words.find_one({"word_lower": word.strip().lower()})
+        db = interaction.client.db
+        doc = await db.words.find_one({"word_lower": word.strip().lower()})
         if not doc:
-            await interaction.followup.send(f"`{word}` is not in the dictionary yet. Add it with `/add`.")
+            await interaction.followup.send(f"`{word}` not found.")
             return
+        
         path = GENERATED_DIR / doc["image_file"] if doc.get("image_file") else None
         if path and path.exists():
             with open(path, "rb") as f:
                 data = f.read()
             file = discord.File(io.BytesIO(data), filename=f"{doc['word_lower']}.png")
-            await interaction.followup.send(
-                content=(
-                    f"**{doc['word']}** — posted by {doc['posted_by']} "
-                    f"· {doc['upvotes']} uppies"
-                ),
-                file=file,
-            )
+            await interaction.followup.send(content=f"**{doc['word']}**", file=file)
         else:
-            await interaction.followup.send(
-                f"**{doc['word']}** — {doc['definition']} (posted by {doc['posted_by']})"
-            )
+            await interaction.followup.send(f"**{doc['word']}** — {doc['definition']}")
 
-    @bot.tree.command(name="list", description="List all words in the TBD dictionary")
+    @bot.tree.command(name="list", description="List words")
     async def list_cmd(interaction: discord.Interaction):
         await interaction.response.defer(thinking=True)
-        cursor = _db.words.find({}, {"_id": 0}).sort([("word_lower", 1)]).limit(200)
-        docs = await cursor.to_list(length=200)
+        db = interaction.client.db
+        cursor = db.words.find({}, {"_id": 0}).sort([("word_lower", 1)]).limit(50)
+        docs = await cursor.to_list(length=50)
         if not docs:
-            await interaction.followup.send("The dictionary is empty. Be the first to add a word with `/add`!")
+            await interaction.followup.send("Dictionary is empty.")
             return
-        lines = [f"**TBD Dictionary** — {len(docs)} word(s):"]
-        for d in docs:
-            lines.append(f"• **{d['word']}** — {d['definition'][:80]} _(by {d['posted_by']}, {d['upvotes']} uppies)_")
-        content = "\n".join(lines)
-        if len(content) > 1900:
-            content = content[:1900] + "\n... (truncated, see dashboard for full list)"
-        await interaction.followup.send(content)
-
-    @bot.tree.command(name="delete", description="Delete a word from the TBD dictionary")
-    @app_commands.describe(word="The word to delete")
-    async def delete_cmd(interaction: discord.Interaction, word: str):
-        await interaction.response.defer(thinking=True)
-        doc = await _db.words.find_one({"word_lower": word.strip().lower()})
-        if not doc:
-            await interaction.followup.send(f"`{word}` is not in the dictionary.")
-            return
-        is_owner = str(interaction.user.id) == doc.get("discord_user_id")
-        is_admin = bool(interaction.user.guild_permissions.manage_messages) if interaction.guild else False
-        if not (is_owner or is_admin):
-            await interaction.followup.send(
-                "Only the original poster or a server moderator can delete this word."
-            )
-            return
-        if doc.get("image_file"):
-            try:
-                (GENERATED_DIR / doc["image_file"]).unlink(missing_ok=True)
-            except Exception:
-                pass
-        await _db.words.delete_one({"_id": doc["_id"]})
-        await interaction.followup.send(f"Deleted **{doc['word']}** from the dictionary.")
+        msg = "\n".join([f"• **{d['word']}**" for d in docs])
+        await interaction.followup.send(f"Dictionary list:\n{msg}")
 
     return bot
 
+
 async def start_bot(token: str, db):
-    """Start the Discord bot. Called from FastAPI startup."""
+    """Start the Discord bot."""
     global _bot
-    
-    # Pass the live 'db' handle directly into the builder
     _bot = _build_bot(db)
-    
     try:
         await _bot.start(token)
     except Exception as e:
