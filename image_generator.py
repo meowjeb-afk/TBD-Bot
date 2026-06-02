@@ -1,103 +1,79 @@
-"""Generate TBD dictionary card images using official Google GenAI."""
-import os
-import base64
+"""Generate TBD dictionary card images locally using Python Pillow. Fully free, no API keys needed."""
 import logging
 import uuid
 from pathlib import Path
-from google import genai
-from google.genai import types
+from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
 ROOT_DIR = Path(__file__).parent
-REFERENCE_IMAGE = ROOT_DIR / "assets" / "reference_card.png"
 GENERATED_DIR = ROOT_DIR / "generated"
 GENERATED_DIR.mkdir(exist_ok=True)
 
-# Cat poses cycle to vary the mascot
-CAT_POSES = [
-    "lying on its back with paws up in the air, big yellow-green eyes, tongue sticking out, playful",
-    "sitting upright looking curious, head tilted, big yellow-green eyes wide open",
-    "curled up sleeping peacefully with eyes closed and a tiny smile",
-    "stretching with front paws extended forward, butt up in the air, yawning",
-    "pouncing/leaping with paws extended, mischievous grin and wide eyes",
-    "standing on hind legs reaching upward with curious expression",
-]
-
 async def generate_card_image(word: str, definition: str, posted_by: str, pose_index: int = 0) -> str:
-    """Generate a TBD-style dictionary card image using official Gemini API."""
-    api_key = os.getenv("EMERGENT_LLM_KEY")
-    if not api_key:
-        raise RuntimeError("EMERGENT_LLM_KEY not configured")
-
-    # Initialize official Google GenAI Client
-    client = genai.Client(api_key=api_key)
-
-    pose = CAT_POSES[pose_index % len(CAT_POSES)]
-    
-    if not REFERENCE_IMAGE.exists():
-        raise FileNotFoundError(f"Missing reference image at {REFERENCE_IMAGE}")
-
-    # Load reference image bytes for Gemini
-    with open(REFERENCE_IMAGE, "rb") as f:
-        image_bytes = f.read()
-
-    prompt = f"""Create a square dictionary card image in the EXACT same style as the reference image provided.
-
-Match ALL of these visual elements from the reference:
-- Dark purple background (#1a0f2e) with subtle paw-print pattern
-- Top header section: lighter purple wave shape with the gradient bubble 'TBD' logo (Trauma Beanies Dictionary), surrounded by sparkles, a ball of yarn on the left and a fish bone on the right
-- 'today's word entry is...' small italic text below the header
-- The featured word in HUGE white handwritten/marker font in quotation marks (centered)
-- A 'Posted by:' pill badge with the username inside
-- '(n.)' grammatical marker at right
-- A decorative squiggly cat-tail line separator
-- The definition text below in cute soft purple/lavender color
-- An 'Uppies' upvote pill button with an up arrow, and a small share/arrow circle button at the bottom-left
-- A purple cat mascot illustration in the bottom-right corner with big yellow-green eyes
-
-REPLACE the text content with:
-- Featured word: "{word.upper()}"
-- Posted by username: "{posted_by}"
-- Definition: "{definition}"
-
-For the cat mascot in the bottom-right, draw it in this pose: {pose}. Keep the cat the same purple color and same art style (big yellow-green eyes, cute round face) as the reference.
-
-Keep everything else (layout, colors, fonts, decorations, paw pattern, header bubble logo) IDENTICAL to the reference image. Square aspect ratio."""
-
-    # Using standard multimodality passing an image and text
-    response = client.models.generate_content(
-        model='gemini-2.5-flash',
-        contents=[
-            types.Part.from_bytes(data=image_bytes, mime_type='image/png'),
-            prompt
-        ]
-    )
-
-    # Check if we received an image block back from the multimodal generation
-    # Note: If the API model requires image output generation structure, 
-    # it normally provides the file bytes directly inside the response parts.
+    """Generates a TBD-style dictionary card image completely locally."""
     try:
-        # Standard processing if returning generated data strings or files
-        if response.candidates and response.candidates[0].content.parts:
-            # Look for returning inline image parts if the preview model generates files directly
-            for part in response.candidates[0].content.parts:
-                if part.inline_data:
-                    generated_bytes = part.inline_data.data
-                    break
-            else:
-                # If it didn't find inline data, check if the response contains text fallback descriptions
-                raise RuntimeError(f"Gemini responded with text instead of drawing an image: {response.text[:200]}")
-        else:
-            raise RuntimeError("No generation parts returned from Gemini.")
-    except Exception as e:
-        logger.error(f"Image extract failed: {e}")
-        raise e
-
-    file_name = f"{uuid.uuid4().hex}.png"
-    out_path = GENERATED_DIR / file_name
-    with open(out_path, "wb") as f:
-        f.write(generated_bytes)
+        logger.info(f"Generating card locally for word: {word}")
         
-    logger.info(f"Saved generated card image: {file_name} ({len(generated_bytes)} bytes)")
-    return file_name
+        # 1. Create canvas with your exact theme color: Dark Purple (#1a0f2e)
+        # 600x600 pixels square layout
+        img = Image.new("RGB", (600, 600), color="#1a0f2e")
+        draw = ImageDraw.Draw(img)
+        
+        # 2. Try loading fonts, gracefully falling back to defaults if not installed on system
+        try:
+            font_title = ImageFont.truetype("arial.ttf", 40)
+            font_body = ImageFont.truetype("arial.ttf", 22)
+            font_meta = ImageFont.truetype("arial.ttf", 16)
+        except IOError:
+            logger.warning("Preferred fonts not found, falling back to system defaults.")
+            font_title = ImageFont.load_default()
+            font_body = ImageFont.load_default()
+            font_meta = ImageFont.load_default()
+            
+        # 3. Draw TBD Header Banner Layout
+        # Lighter purple top header background bar
+        draw.rectangle([(0, 0), (600, 80)], fill="#2d1b4e")
+        draw.text((30, 25), "🔮 Trauma Beanies Dictionary (TBD)", fill="#fff", font=font_meta)
+        
+        # 4. Draw Content Elements
+        draw.text((40, 110), "today's word entry is...", fill="#9d8bbd", font=font_meta)
+        
+        # Featured Word in massive white text
+        draw.text((40, 140), f'"{word.upper()}"', fill="#ffffff", font=font_title)
+        
+        # (n.) Grammatical marker at the right
+        draw.text((520, 155), "(n.)", fill="#9d8bbd", font=font_body)
+        
+        # Decorative squiggly separator line
+        draw.line([(40, 210), (560, 210)], fill="#4e3180", width=3)
+        
+        # 5. Wrap and draw the Definition text cleanly
+        max_chars = 45
+        wrapped_lines = [definition[i:i+max_chars] for i in range(0, len(definition), max_chars)]
+        
+        y_offset = 240
+        for line in wrapped_lines[:8]: # Cap lines to ensure it fits perfectly
+            draw.text((40, y_offset), line.strip(), fill="#d1c4e9", font=font_body)
+            y_offset += 32
+            
+        # 6. Draw Footer UI Badges (Pill Badges)
+        # Posted By pill container
+        draw.rounded_rectangle([(40, 520), (240, 560)], radius=10, fill="#2d1b4e")
+        draw.text((55, 530), f"👤 {posted_by}", fill="#fff", font=font_meta)
+        
+        # Uppies / Vote pill container on the right
+        draw.rounded_rectangle([(440, 520), (560, 560)], radius=10, fill="#4e3180")
+        draw.text((460, 530), "🔺 Uppies", fill="#fff", font=font_meta)
+
+        # 7. Save output file
+        file_name = f"{uuid.uuid4().hex}.png"
+        out_path = GENERATED_DIR / file_name
+        img.save(out_path)
+        
+        logger.info(f"Successfully generated local asset card: {file_name}")
+        return file_name
+
+    except Exception as e:
+        logger.error(f"Local drawing engine error: {e}", exc_info=True)
+        raise e
