@@ -12,6 +12,11 @@ ASSETS_DIR = ROOT_DIR / "assets"
 GENERATED_DIR = ROOT_DIR / "generated"
 GENERATED_DIR.mkdir(exist_ok=True)
 
+# Define paths for your 3 custom fonts
+FONT_TITLE_PATH = ASSETS_DIR / "title_font.ttf"
+FONT_BODY_PATH = ASSETS_DIR / "body_font.ttf"
+FONT_META_PATH = ASSETS_DIR / "meta_font.ttf"
+
 # Total number of unique cat images you have in your assets folder
 TOTAL_CAT_MASCOTS = 16 
 
