@@ -36,9 +36,10 @@ def _build_bot(db) -> commands.Bot:
         try:
             guild = discord.Object(id=DEV_GUILD_ID)
             
-            # 1. Clear out the global tree cache to eliminate duplicate UI listings
-            bot.tree.clear(guild=None)
+            # 1. Clear out the global tree cache by syncing an empty list globally
+            bot.tree.clear_commands(guild=None)
             await bot.tree.sync(guild=None)
+            logger.info("Old global command cache cleared!")
             
             # 2. Sync exclusively to your private developer guild for instant updates
             bot.tree.copy_global_to(guild=guild)
