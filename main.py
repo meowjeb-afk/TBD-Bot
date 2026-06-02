@@ -1,3 +1,4 @@
+import certifi
 import os
 import asyncio
 import logging
@@ -7,6 +8,9 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 # Importing start/stop functions from your flat directory
 from discord_bot import start_bot, stop_bot
+
+# Add this before creating your AsyncIOMotorClient
+os.environ["SSL_CERT_FILE"] = certifi.where()
 
 # Set up logging to show what is happening during startup
 logging.basicConfig(level=logging.INFO)
