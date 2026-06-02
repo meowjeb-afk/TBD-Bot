@@ -14,11 +14,14 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # DEBUG: Print ALL environment keys found by the app
-    logger.info(f"DEBUG: Found environment keys: {list(os.environ.keys())}")
+    # HARDCODED for testing purposes only
+    mongo_uri = "mongodb+srv://pixl:yCcwerX55ekSla0y@tbd.tvvtptx.mongodb.net/?appName=TBD"
     
-    mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-    # ... rest of your code
+    logger.info("✅ Attempting to connect to MongoDB Atlas with hardcoded URI.")
+    
+    client = AsyncIOMotorClient(mongo_uri)
+    db = client.tbd_dictionary
+    # ... rest of lifespan
     
     # Diagnostic: Check if we are accidentally using the local fallback
     if "localhost" in mongo_uri:
