@@ -26,11 +26,12 @@ async def lifespan(app: FastAPI):
         yield
         return
 
-    # Inside lifespan in main.py
+    # In main.py inside lifespan
     logger.info("✅ Attempting to connect to MongoDB Atlas cluster.")
 
     client = AsyncIOMotorClient(
         mongo_uri,
+        tls=True,
         serverSelectionTimeoutMS=20000
     )
     
