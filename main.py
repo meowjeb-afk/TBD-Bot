@@ -28,13 +28,15 @@ async def lifespan(app: FastAPI):
 
     logger.info("✅ Attempting to connect to MongoDB Atlas cluster.")
 
-    # Initialize Client with TLS overrides to bypass the SSL handshake failure
-    client = AsyncIOMotorClient(
-        mongo_uri,
-        tls=False,
-        tlsAllowInvalidCertificates=True, # Bypasses the handshake error
-        serverSelectionTimeoutMS=20000    # Gives Atlas time to respond
-    )
+    # Update your client initialization in main.py
+client = AsyncIOMotorClient(
+    mongo_uri,
+    tls=True,
+    tlsAllowInvalidCertificates=True,
+    serverSelectionTimeoutMS=5000, # Reduced to 5s to fail/retry faster
+    connectTimeoutMS=5000,
+    directConnection=False # Keep False for Replica Sets
+)
     
     db = client.tbd_dictionary
     
