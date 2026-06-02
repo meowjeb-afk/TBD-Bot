@@ -32,6 +32,7 @@ async def lifespan(app: FastAPI):
     client = AsyncIOMotorClient(
         mongo_uri,
         tls=True,
+        tlsCAFile=certifi.where(),  # This forces Python to use a rock-solid cert bundle
         serverSelectionTimeoutMS=20000
     )
     
