@@ -24,6 +24,7 @@ def _build_bot(db) -> commands.Bot:
     intents.message_content = False
     bot = commands.Bot(command_prefix="!", intents=intents)
 
+    # Attach the cloud database handle directly to the bot object
     bot.db = db
 
     # === UPDATE THIS WITH YOUR ACTUAL DISCORD SERVER ID ===
@@ -52,8 +53,10 @@ def _build_bot(db) -> commands.Bot:
     @bot.tree.command(name="add", description="Add a word to the TBD dictionary")
     async def add_cmd(interaction: discord.Interaction, word: str, definition: str):
         await interaction.response.defer(thinking=True)
+        
         try:
-            db = interaction.client.db
+            # FIX: Use the secure bot-attached database reference
+            db = bot.db
             word_clean = word.strip()
             word_lower = word_clean.lower()
             
@@ -95,6 +98,7 @@ def _build_bot(db) -> commands.Bot:
                 content=f"**{word_clean}** added to the dictionary!",
                 file=file,
             )
+            
         except Exception as e:
             logger.error(f"❌ COMMAND ERROR: {e}", exc_info=True)
             await interaction.followup.send(f"An error occurred: {e}")
@@ -103,7 +107,8 @@ def _build_bot(db) -> commands.Bot:
     async def lookup_cmd(interaction: discord.Interaction, word: str):
         await interaction.response.defer(thinking=True)
         try:
-            db = interaction.client.db
+            # FIX: Use the secure bot-attached database reference
+            db = bot.db
             doc = await db.words.find_one({"word_lower": word.strip().lower()})
             if not doc:
                 await interaction.followup.send(f"`{word}` not found.")
@@ -125,7 +130,8 @@ def _build_bot(db) -> commands.Bot:
     async def list_cmd(interaction: discord.Interaction):
         await interaction.response.defer(thinking=True)
         try:
-            db = interaction.client.db
+            # FIX: Use the secure bot-attached database reference
+            db = bot.db
             cursor = db.words.find({}, {"word": 1})
             words_list = [doc["word"] for doc in await cursor.to_list(length=100)]
             
@@ -142,6 +148,7 @@ def _build_bot(db) -> commands.Bot:
     return bot
 
 async def start_bot(token: str, db):
+    """Start the Discord bot."""
     global _bot
     _bot = _build_bot(db)
     try:
