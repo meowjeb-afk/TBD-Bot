@@ -24,7 +24,6 @@ def _build_bot(db) -> commands.Bot:
     intents.message_content = False
     bot = commands.Bot(command_prefix="!", intents=intents)
 
-    # Attach the cloud database handle directly to the bot object
     bot.db = db
 
     # === UPDATE THIS WITH YOUR ACTUAL DISCORD SERVER ID ===
@@ -36,7 +35,7 @@ def _build_bot(db) -> commands.Bot:
         try:
             guild = discord.Object(id=DEV_GUILD_ID)
             
-            # This is all you need for instant private server testing!
+            # Sync exclusively to your private developer guild for instant updates
             bot.tree.copy_global_to(guild=guild)
             synced = await bot.tree.sync(guild=guild)
             
@@ -53,7 +52,6 @@ def _build_bot(db) -> commands.Bot:
     @bot.tree.command(name="add", description="Add a word to the TBD dictionary")
     async def add_cmd(interaction: discord.Interaction, word: str, definition: str):
         await interaction.response.defer(thinking=True)
-        
         try:
             db = interaction.client.db
             word_clean = word.strip()
@@ -97,7 +95,6 @@ def _build_bot(db) -> commands.Bot:
                 content=f"**{word_clean}** added to the dictionary!",
                 file=file,
             )
-            
         except Exception as e:
             logger.error(f"❌ COMMAND ERROR: {e}", exc_info=True)
             await interaction.followup.send(f"An error occurred: {e}")
@@ -124,10 +121,27 @@ def _build_bot(db) -> commands.Bot:
             logger.error(f"❌ LOOKUP ERROR: {e}", exc_info=True)
             await interaction.followup.send("Error looking up word.")
 
+    @bot.tree.command(name="list", description="List all words in the TBD dictionary")
+    async def list_cmd(interaction: discord.Interaction):
+        await interaction.response.defer(thinking=True)
+        try:
+            db = interaction.client.db
+            cursor = db.words.find({}, {"word": 1})
+            words_list = [doc["word"] for doc in await cursor.to_list(length=100)]
+            
+            if not words_list:
+                await interaction.followup.send("The dictionary is currently empty.")
+                return
+                
+            formatted_list = ", ".join(f"`{w}`" for w in words_list)
+            await interaction.followup.send(f"📚 **Dictionary Words:**\n{formatted_list}")
+        except Exception as e:
+            logger.error(f"❌ LIST ERROR: {e}", exc_info=True)
+            await interaction.followup.send("Error retrieving words list.")
+
     return bot
 
 async def start_bot(token: str, db):
-    """Start the Discord bot."""
     global _bot
     _bot = _build_bot(db)
     try:
