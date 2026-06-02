@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Connect to MongoDB on startup
-    mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+   mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017")
     client = AsyncIOMotorClient(mongo_uri)
     db = client.tbd_dictionary  # Database name
     
