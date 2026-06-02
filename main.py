@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
     # Initialize Client with TLS overrides to bypass the SSL handshake failure
     client = AsyncIOMotorClient(
         mongo_uri,
-        tls=True,
+        tls=False,
         tlsAllowInvalidCertificates=True, # Bypasses the handshake error
         serverSelectionTimeoutMS=20000    # Gives Atlas time to respond
     )
