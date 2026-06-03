@@ -23,7 +23,7 @@ FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf"
 
 TOTAL_CAT_MASCOTS = 18
 
-# Precise Placement Anchors (Top-Left Corner)
+# Krita-verified Top-Left Anchor Coordinates
 ANCHOR_INTRO      = (699, 540) 
 ANCHOR_WORD       = (363, 675) 
 ANCHOR_USERNAME   = (1023, 984)  
@@ -53,7 +53,7 @@ def draw_mixed_font_text(draw, position, text, primary_font, primary_path, fallb
         x += draw.textlength(char, font=current_font)
 
 async def generate_card_image(word: str, definition: str, posted_by: str, pose_index: int = 0) -> str:
-    """Generates a high-resolution dictionary card using Krita-defined anchors."""
+    """Generates a high-resolution dictionary card with centered text and scaled assets."""
     try:
         logger.info(f"Compiling card for '{word}'")
         img = Image.open(TEMPLATE_PATH).convert("RGB")
@@ -69,37 +69,42 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         except Exception:
             font_title = font_body = font_meta = font_intro = font_fallback = ImageFont.load_default()
 
-        # A. Intro sub-header
-        draw.text(ANCHOR_INTRO, "today's word entry is...", fill="#ffffff", font=font_intro)
+        # A. Intro sub-header (Centered at 1024px)
+        intro_text = "today's word entry is..."
+        i_w = draw.textlength(intro_text, font=font_intro)
+        draw.text((1024 - (i_w / 2), ANCHOR_INTRO[1]), intro_text, fill="#ffffff", font=font_intro)
 
-        # B. Main Featured Word
+        # B. Main Featured Word (Centered at 1024px)
         word_text = f"“{word.upper()}”"
-        draw.text(ANCHOR_WORD, word_text, fill="#ffffff", font=font_title)
+        w_w = draw.textlength(word_text, font=font_title)
+        draw.text((1024 - (w_w / 2), ANCHOR_WORD[1]), word_text, fill="#ffffff", font=font_title)
 
-        # C. Username (Unicode-aware, aligned to button)
+        # C. Username (Clean, aligned to button)
         draw_mixed_font_text(
             draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill="#ffffff"
         )
 
-        # D. Definition (Wrapped)
+        # D. Definition (Centered within a 600px wide column)
         wrapped_def = textwrap.wrap(definition, width=40)
         curr_y = ANCHOR_DEFINITION[1]
         for line in wrapped_def:
-            draw.text((ANCHOR_DEFINITION[0], curr_y), line, fill="#d1d1d1", font=font_body)
+            l_w = draw.textlength(line, font=font_body)
+            draw.text((ANCHOR_DEFINITION[0] + (300 - (l_w / 2)), curr_y), line, fill="#d1d1d1", font=font_body)
             curr_y += 60
 
-        # E. Mascot
+        # E. Mascot (Scaled up to 600px)
         cat_num = pose_index % TOTAL_CAT_MASCOTS
         cat_path = ASSETS_DIR / f"cat_{cat_num}.png"
         if cat_path.exists():
             cat_mascot = Image.open(cat_path).convert("RGBA")
-            cat_mascot.thumbnail((400, 400))
+            cat_mascot.thumbnail((600, 600))
             img.paste(cat_mascot, ANCHOR_CAT, cat_mascot)
 
         # Save result
         filename = f"{uuid.uuid4()}.png"
         output_path = GENERATED_DIR / filename
         img.save(output_path, "PNG", quality=100)
+        
         return filename
 
     except Exception as e:
