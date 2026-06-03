@@ -26,7 +26,6 @@ FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf"
 TOTAL_CAT_MASCOTS = 11
 
 # Krita-verified Top-Left Anchor Coordinates
-ANCHOR_INTRO      = (698, 606) 
 ANCHOR_WORD       = (363, 675) 
 ANCHOR_USERNAME   = (1023, 984)  
 ANCHOR_DEFINITION = (184, 1165) 
@@ -70,42 +69,35 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
             font_title = ImageFont.truetype(str(FONT_TITLE_PATH), 150)
             font_body = ImageFont.truetype(str(FONT_BODY_PATH), 50)
             font_meta = ImageFont.truetype(str(FONT_META_PATH), 40)
-            font_intro = ImageFont.truetype(str(FONT_BODY_PATH), 30)
             font_fallback = ImageFont.truetype(str(FONT_FALLBACK_PATH), 40)
         except Exception:
-            font_title = font_body = font_meta = font_intro = font_fallback = ImageFont.load_default()
+            font_title = font_body = font_meta = font_fallback = ImageFont.load_default()
 
-        # A. Intro (Centered at 1024px) - Pale Purple
-        intro_text = "today's word entry is..."
-        i_w = draw.textlength(intro_text, font=font_intro)
-        draw.text((1024 - (i_w / 2), ANCHOR_INTRO[1]), intro_text, fill="#DCD0FF", font=font_intro)
-
-        # B. Main Word (Centered at 1024px) - Pale Purple
+        # A. Main Word (Centered at 1024px) - Pale Purple
         word_text = f"“{word.upper()}”"
         w_w = draw.textlength(word_text, font=font_title)
         draw.text((1024 - (w_w / 2), ANCHOR_WORD[1]), word_text, fill="#DCD0FF", font=font_title)
 
-        # C. Username - Pale Purple
+        # B. Username - Pale Purple
         draw_mixed_font_text(
             draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill="#DCD0FF"
         )
 
-        # D. Definition (Left-aligned) - Pale Purple
+        # C. Definition (Left-aligned) - Pale Purple
         wrapped_def = textwrap.wrap(definition, width=40)
         curr_y = ANCHOR_DEFINITION[1]
         for line in wrapped_def:
             draw.text((ANCHOR_DEFINITION[0], curr_y), line, fill="#DCD0FF", font=font_body)
             curr_y += 60
 
-        # E. Mascot (Pre-sized 1000x1000 assets)
+        # D. Mascot (Pre-sized 1000x1000 assets)
         cat_num = pose_index % TOTAL_CAT_MASCOTS
         cat_path = ASSETS_DIR / f"cat_{cat_num}.png"
         if cat_path.exists():
             cat_mascot = Image.open(cat_path).convert("RGBA")
-            # Assets are already standardized; direct paste
             img.paste(cat_mascot, ANCHOR_CAT, cat_mascot)
 
-        # Save result (PNG uses optimize=True instead of quality parameter)
+        # Save result
         filename = f"{uuid.uuid4()}.png"
         output_path = GENERATED_DIR / filename
         img.save(output_path, "PNG", optimize=True)
