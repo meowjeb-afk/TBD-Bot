@@ -48,13 +48,10 @@ async def start_bot(token: str, db_connection) -> None:
         # ==========================================
         @active_bot.tree.command(
             name="deleteword", 
-            description="[TESTING ONLY] Force delete a word entry from the TBD Dictionary database."
+            description="[TESTING ONLY] Force delete a word entry from the database."
         )
         @app_commands.describe(word="The exact dictionary word entry you wish to wipe out.")
         async def deleteword_command(interaction: discord.Interaction, word: str):
-            """Targeted developer testing route built to slice documents out of MongoDB collections."""
-            
-            # Verification structural check to prevent standard server users from abusing purges
             if interaction.user.id != DEVELOPER_USER_ID:
                 await interaction.response.send_message(
                     "❌ **Permission Denied:** This destructive action is locked exclusively to developers during testing.",
@@ -63,21 +60,14 @@ async def start_bot(token: str, db_connection) -> None:
                 return
 
             if active_bot.db is None:
-                await interaction.response.send_message(
-                    "❌ **Database Offline:** The bot lost its active link connection to MongoDB Atlas.",
-                    ephemeral=True
-                )
+                await interaction.response.send_message("❌ **Database Offline:** The bot lost its active link connection.", ephemeral=True)
                 return
 
-            # Clean leading/trailing spaces from input
             target_word = word.strip()
-            
-            # Defer response immediately to prevent standard 3-second Discord timeouts
             await interaction.response.defer(ephemeral=True)
 
             try:
-                # FIXED: Uses case-insensitive regex line anchors (^ and $)
-                # This drops documents regardless of lowercase or uppercase mismatches.
+                # 💡 NOTE: If your collection is not named 'cards', change '.cards' below!
                 query = {"word": {"$regex": f"^{target_word}$", "$options": "i"}}
                 result = await active_bot.db.cards.delete_one(query)
                 
@@ -90,78 +80,74 @@ async def start_bot(token: str, db_connection) -> None:
                     logger.info(f"Developer {interaction.user} forcefully dropped word '{target_word}' via slash route.")
                 else:
                     await interaction.followup.send(
-                        f"❓ **Wipe Missed:** Could not find an entry matching `“{target_word}”` inside the collection.",
+                        f"❓ **Wipe Missed:** Could not find an entry matching `“{target_word}”` inside the database. Run `/debuglist` to audit keys.",
                         ephemeral=True
                     )
             except Exception as mongo_error:
-                logger.error(f"MongoDB pipeline broke during inline testing wipe: {mongo_error}")
-                await interaction.followup.send(
-                    f"❌ **Database Pipeline Exception:** Processing error occurred:\n`{str(mongo_error)}`",
-                    ephemeral=True
-                )
+                logger.error(f"MongoDB pipeline broke during testing wipe: {mongo_error}")
+                await interaction.followup.send(f"❌ **Database Error:** `{str(mongo_error)}`", ephemeral=True)
 
         # ==========================================
-        # COMMAND 2: SLASH COMMAND - /debuglist
+        # COMMAND 2: SLASH COMMAND - /list (FIXED TIMEOUT)
+        # ==========================================
+        @active_bot.tree.command(
+            name="list", 
+            description="List all words currently saved in the TBD Dictionary."
+        )
+        async def list_command(interaction: discord.Interaction):
+            if active_bot.db is None:
+                await interaction.response.send_message("❌ Database connection offline.", ephemeral=True)
+                return
+
+            # 🔥 THE CRITICAL TIMEOUT FIX: Tells Discord to wait for data processing
+            await interaction.response.defer(ephemeral=False)
+
+            try:
+                # 💡 NOTE: If your collection is not named 'cards', change '.cards' below!
+                cursor = active_bot.db.cards.find().sort("word", 1)
+                documents = await cursor.to_list(length=100)
+
+                if not documents:
+                    await interaction.followup.send("📖 The dictionary is currently empty!")
+                    return
+
+                # Build public string summary output loop safely
+                word_list = []
+                for doc in documents:
+                    # Adaptive safety check if you stored keys under 'word' or 'title'
+                    w = doc.get("word") or doc.get("title") or "Unknown Schema Element"
+                    word_list.append(f"• **{w}**")
+
+                message_content = "📖 **Current TBD Dictionary Entries:**\n" + "\n".join(word_list)
+                
+                # Enforce safety restrictions on character lengths
+                if len(message_content) > 1950:
+                    message_content = message_content[:1900] + "\n...and more entries!"
+
+                await interaction.followup.send(message_content)
+
+            except Exception as e:
+                logger.error(f"Failed to compile /list output: {e}")
+                await interaction.followup.send(f"❌ Failed to fetch list: `{str(e)}`")
+
+        # ==========================================
+        # COMMAND 3: SLASH COMMAND - /debuglist
         # ==========================================
         @active_bot.tree.command(
             name="debuglist", 
-            description="[TESTING ONLY] Inspect the raw document structure directly from MongoDB."
+            description="[TESTING ONLY] Inspect raw database structure."
         )
         async def debuglist_command(interaction: discord.Interaction):
-            """Dumps raw documents from the collection to verify exact schema field names."""
             if interaction.user.id != DEVELOPER_USER_ID:
                 await interaction.response.send_message("❌ **Permission Denied.**", ephemeral=True)
                 return
 
             if active_bot.db is None:
-                await interaction.response.send_message("❌ **Database Offline.**", ephemeral=True)
+                await interaction.response.send_message("❌ **Database Connection Unavailable.**", ephemeral=True)
                 return
 
-            # Defer instantly to prevent Discord's strict 3-second timeout crash
             await interaction.response.defer(ephemeral=True)
 
             try:
-                # Pull the 3 most recent documents to inspect their keys
-                cursor = active_bot.db.cards.find().sort("_id", -1).limit(3)
-                documents = await cursor.to_list(length=3)
-
-                if not documents:
-                    await interaction.followup.send(
-                        "⚠️ **Database is completely empty.** No records exist in this collection to inspect.",
-                        ephemeral=True
-                    )
-                    return
-                
-                raw_dump = json.dumps(documents, default=json_util.default, indent=2)
-                
-                # Truncate if it exceeds Discord's max message limit length (2000 characters)
-                if len(raw_dump) > 1900:
-                    raw_dump = raw_dump[:1900] + "\n...[Truncated due to length]"
-
-                await interaction.followup.send(
-                    f"🔍 **Raw MongoDB Inspection (Last 3 Entries):**\n```json\n{raw_dump}\n```",
-                    ephemeral=True
-                )
-
-            except Exception as e:
-                logger.error(f"Debug list failed: {e}")
-                await interaction.followup.send(f"❌ Diagnostic error: `{str(e)}`", ephemeral=True)
-
-        # Connect directly to the discord gateways using the live token context
-        await active_bot.start(token)
-        
-    except discord.errors.LoginFailure:
-        logger.error("❌ Failed to authenticate with Discord. Your DISCORD_TOKEN configuration is invalid.")
-        raise
-    except Exception as e:
-        logger.error(f"Discord core architecture crashed on initialization startup: {e}", exc_info=True)
-        raise e
-
-
-async def stop_bot() -> None:
-    """Safely shuts down the active bot connection instance during backend application lifespans."""
-    global active_bot
-    if active_bot is not None:
-        logger.info("Closing active Discord web gateway structures gracefully...")
-        await active_bot.close()
-        logger.info("Discord engine successfully unmounted and finalized cleanly.")
+                # 💡 NOTE: If your collection is not named 'cards', change '.cards' below!
+                cursor = active_bot.db.cards.find().sort("_id
