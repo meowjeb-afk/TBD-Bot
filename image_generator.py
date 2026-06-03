@@ -19,7 +19,7 @@ FONT_BODY_PATH = ASSETS_DIR / "body_font.ttf"
 FONT_META_PATH = ASSETS_DIR / "meta_font.ttf"
 FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf" 
 
-TOTAL_CAT_MASCOTS = 18 
+TOTAL_CAT_MASCOTS = 16 
 
 def has_glyph(font_path: Path, glyph: str) -> bool:
     """Checks if a font file contains the rendering glyph for a specific character."""
@@ -61,56 +61,61 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         if cat_path.exists():
             cat_mascot = Image.open(cat_path).convert("RGBA")
             # Anchor cat directly into the bottom-right corner safely
-            cat_x = img_rgba.width - cat_mascot.width - 25
-            cat_y = img_rgba.height - cat_mascot.height - 25
+            cat_x = img_rgba.width - cat_mascot.width - 40
+            cat_y = img_rgba.height - cat_mascot.height - 40
             img_rgba.alpha_composite(cat_mascot, dest=(cat_x, cat_y))
 
-        # FIX COLOR SATURATION: Composite the RGBA canvas over an empty solid background 
-        # instead of a raw destructive .convert("RGB") call.
+        # Preserve color profile integrity by pasting onto a clean canvas
         img = Image.new("RGB", img_rgba.size, (0, 0, 0))
         img.paste(img_rgba, (0, 0), img_rgba)
         
         draw = ImageDraw.Draw(img)
         
-        # 3. Configure Fonts
+        # 3. Configure Fonts & Sizes based on reference image proportions
         try:
-            font_title = ImageFont.truetype(str(FONT_TITLE_PATH), 52) 
-            font_body = ImageFont.truetype(str(FONT_BODY_PATH), 28)  # Bumped up slightly for readability
-            font_meta = ImageFont.truetype(str(FONT_META_PATH), 22)  # Fits nicely in the pill badge
-            font_fallback = ImageFont.truetype(str(FONT_FALLBACK_PATH), 22)
+            font_intro = ImageFont.truetype("arial.ttf", 22)             # Small intro text
+            font_title = ImageFont.truetype(str(FONT_TITLE_PATH), 90)    # Massive, bold main word
+            font_meta = ImageFont.truetype(str(FONT_META_PATH), 26)      # Username next to badge
+            font_fallback = ImageFont.truetype(str(FONT_FALLBACK_PATH), 26)
+            font_body = ImageFont.truetype(str(FONT_BODY_PATH), 34)      # Highly readable definition
         except IOError:
             logger.warning("Fonts failed to load, falling back to basic defaults.")
-            font_title = font_body = font_meta = font_fallback = ImageFont.load_default()
+            font_intro = font_title = font_body = font_meta = font_fallback = ImageFont.load_default()
             
-        # 4. Burn Text Elements (Corrected Coordinates)
+        # 4. Burn Text Elements (Mapped to Reference Image layout)
         
-        # Title Word - Placed cleanly in the open upper sector below the logo wave
-        word_text = f'"{word.upper()}"'
-        w_width = draw.textlength(word_text, font=font_title)
-        word_x = (img.width - w_width) // 2
-        draw.text((word_x, 320), word_text, fill="#ffffff", font=font_title)
+        # A. Intro sub-header line
+        intro_text = "today's word entry is..."
+        intro_w = draw.textlength(intro_text, font=font_intro)
+        intro_x = (img.width - intro_w) // 2
+        draw.text((intro_x, 335), intro_text, fill="#ffffff", font=font_intro)
         
-        # Definition Block - Centered right in the primary dark container area
-        lines = textwrap.wrap(definition, width=42)
-        y_offset = 450
-        for line in lines[:5]:
-            line_w = draw.textlength(line, font=font_body)
-            line_x = (img.width - line_w) // 2
-            draw.text((line_x, y_offset), line, fill="#b3a2d6", font=font_body)
-            y_offset += 40
-
-        # Username - Placed perfectly inside the "Posted by:" layout capsule badge shape
-        # X: 485 places it right next to the "Posted by:" inner text
-        # Y: 602 centers it vertically within the bounds of that specific badge line
+        # B. Main Featured Word (Centered, giant, wrapped in stylized quotes)
+        word_text = f'“{word.upper()}”'
+        word_w = draw.textlength(word_text, font=font_title)
+        word_x = (img.width - word_w) // 2
+        draw.text((word_x, 370), word_text, fill="#ffffff", font=font_title)
+        
+        # C. Username (Perfectly left-aligned right after the "Posted by:" visual badge)
+        # 500x matches the right edge of that purple pill box container on the divider bar
         draw_mixed_font_text(
             draw=draw, 
-            position=(485, 602), 
+            position=(505, 592), 
             text=posted_by, 
             primary_font=font_meta, 
             primary_path=FONT_META_PATH, 
             fallback_font=font_fallback, 
-            fill="#ffffff"
+            fill="#b3a2d6"
         )
+        
+        # D. Definition Block (Left-aligned text layout below the middle bar, wrapped safely)
+        # width=32 prevents text from bleeding into the cat sticker's footprint on the right
+        lines = textwrap.wrap(definition, width=32)
+        y_offset = 680
+        for line in lines[:4]:
+            # Left aligned position matches the visual start of the graphic divider elements on the left
+            draw.text((140, y_offset), line, fill="#b3a2d6", font=font_body)
+            y_offset += 46
 
         # 5. Save output
         file_name = f"{uuid.uuid4().hex}.png"
