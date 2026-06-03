@@ -90,12 +90,11 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
             draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill="#ffffff"
         )
 
-        # D. Definition (Centered within a 600px wide column)
+        # D. Definition (Left-aligned)
         wrapped_def = textwrap.wrap(definition, width=40)
         curr_y = ANCHOR_DEFINITION[1]
         for line in wrapped_def:
-            l_w = draw.textlength(line, font=font_body)
-            draw.text((ANCHOR_DEFINITION[0] + (300 - (l_w / 2)), curr_y), line, fill="#d1d1d1", font=font_body)
+            draw.text((ANCHOR_DEFINITION[0], curr_y), line, fill="#d1d1d1", font=font_body)
             curr_y += 60
 
         # E. Mascot (Pre-sized 700x700 assets)
