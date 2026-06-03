@@ -2,116 +2,94 @@
 import logging
 import textwrap
 import uuid
-import random
-import time
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
-from fontTools.ttLib import TTFont
 
 logger = logging.getLogger(__name__)
 
-# Directory setup
 ROOT_DIR = Path(__file__).parent
+TEMPLATE_PATH = ROOT_DIR / "assets" / "card_template.png"
 ASSETS_DIR = ROOT_DIR / "assets"
-TEMPLATE_PATH = ASSETS_DIR / "card_template.png"
 GENERATED_DIR = ROOT_DIR / "generated"
 GENERATED_DIR.mkdir(exist_ok=True)
 
-# Font Setup
-FONT_TITLE_PATH = ASSETS_DIR / "title_font.ttf"
-FONT_BODY_PATH = ASSETS_DIR / "body_font.ttf"
-FONT_META_PATH = ASSETS_DIR / "meta_font.ttf"
-FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf"
+# Total number of unique cat images you have in your assets folder
+TOTAL_CAT_MASCOTS = 16 
 
-TOTAL_CAT_MASCOTS = 11
-
-# Krita-verified Top-Left Anchor Coordinates
-ANCHOR_INTRO      = (698, 606) 
-ANCHOR_WORD       = (363, 675) 
-ANCHOR_USERNAME   = (1023, 984)  
-ANCHOR_DEFINITION = (184, 1165) 
-ANCHOR_CAT        = (1266, 906) 
-
-def has_glyph(font_path: Path, glyph: str) -> bool:
-    """Checks if a font file contains the rendering glyph for a specific character."""
+async def generate_card_image(word: str, definition: str, posted_by: str, pose_index: int = 0) -> str:
+    """Overlays custom text and cycles transparent cat mascots onto the template."""
     try:
-        font = TTFont(str(font_path))
-        for table in font['cmap'].tables:
-            if ord(glyph) in table.cmap:
-                return True
-        return False
-    except Exception:
-        return False
+        logger.info(f"Compiling card for '{word}' using mascot variant {pose_index}")
+        
+        if not TEMPLATE_PATH.exists():
+            raise FileNotFoundError(f"Missing background template asset at {TEMPLATE_PATH}")
 
-def draw_mixed_font_text(draw, position, text, primary_font, primary_path, fallback_font, fill):
-    """Draws text character-by-character, swinging to fallback fonts for Unicode styles."""
-    x, y = position
-    for char in text:
-        if has_glyph(primary_path, char) or not FONT_FALLBACK_PATH.exists():
-            current_font = primary_font
-        else:
-            current_font = fallback_font
-        draw.text((x, y), char, fill=fill, font=current_font)
-        x += draw.textlength(char, font=current_font)
-
-async def generate_card_image(word: str, definition: str, posted_by: str, pose_index: int = None) -> str:
-    """Generates a high-resolution dictionary card using custom anchors and forced random cat selection."""
-    try:
-        # Force a new seed and pick a random index if none is provided
-        random.seed(time.time())
-        if pose_index is None:
-            pose_index = random.randint(0, TOTAL_CAT_MASCOTS - 1)
-
-        logger.info(f"Compiling card for '{word}' with cat pose {pose_index}")
-        img = Image.open(TEMPLATE_PATH).convert("RGB")
-        draw = ImageDraw.Draw(img)
-
-        try:
-            font_title = ImageFont.truetype(str(FONT_TITLE_PATH), 150)
-            font_body = ImageFont.truetype(str(FONT_BODY_PATH), 50)
-            font_meta = ImageFont.truetype(str(FONT_META_PATH), 40)
-            font_intro = ImageFont.truetype(str(FONT_BODY_PATH), 30)
-            font_fallback = ImageFont.truetype(str(FONT_FALLBACK_PATH), 40)
-        except Exception:
-            font_title = font_body = font_meta = font_intro = font_fallback = ImageFont.load_default()
-
-        # A. Intro (Centered at 1024px)
-        intro_text = "today's word entry is..."
-        i_w = draw.textlength(intro_text, font=font_intro)
-        draw.text((1024 - (i_w / 2), ANCHOR_INTRO[1]), intro_text, fill="#ffffff", font=font_intro)
-
-        # B. Main Word (Centered at 1024px)
-        word_text = f"“{word.upper()}”"
-        w_w = draw.textlength(word_text, font=font_title)
-        draw.text((1024 - (w_w / 2), ANCHOR_WORD[1]), word_text, fill="#ffffff", font=font_title)
-
-        # C. Username
-        draw_mixed_font_text(
-            draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill="#ffffff"
-        )
-
-        # D. Definition (Left-aligned)
-        wrapped_def = textwrap.wrap(definition, width=40)
-        curr_y = ANCHOR_DEFINITION[1]
-        for line in wrapped_def:
-            draw.text((ANCHOR_DEFINITION[0], curr_y), line, fill="#d1d1d1", font=font_body)
-            curr_y += 60
-
-        # E. Mascot (Pre-sized 700x700 assets)
+        # 1. Open the blank base template
+        img = Image.open(TEMPLATE_PATH).convert("RGBA")
+        
+        # 2. Dynamically paste the selected cat mascot in the bottom right
         cat_num = pose_index % TOTAL_CAT_MASCOTS
         cat_path = ASSETS_DIR / f"cat_{cat_num}.png"
-        if cat_path.exists():
-            cat_mascot = Image.open(cat_path).convert("RGBA")
-            # Assets are already standardized; direct paste
-            img.paste(cat_mascot, ANCHOR_CAT, cat_mascot)
-
-        # Save result
-        filename = f"{uuid.uuid4()}.png"
-        output_path = GENERATED_DIR / filename
-        img.save(output_path, "PNG", quality=100)
         
-        return filename
+        if cat_path.exists():
+            # Open the mascot and ensure it keeps its transparency layer intact
+            cat_mascot = Image.open(cat_path).convert("RGBA")
+            
+            # --- MASCOT POSITIONING ---
+            cat_x = img.width - cat_mascot.width - 40
+            cat_y = img.height - cat_mascot.height - 40
+            
+            img.alpha_composite(cat_mascot, dest=(cat_x, cat_y))
+            logger.info(f"Successfully pasted cat_{cat_num}.png onto layout")
+        else:
+            logger.warning(f"Mascot asset file not found at {cat_path}, skipping cat layer.")
+
+        # Convert back to RGB so we can draw sharp text and save cleanly
+        img = img.convert("RGB")
+        draw = ImageDraw.Draw(img)
+        
+        # 3. Configure text styling
+        try:
+            # Swap "arialbd.ttf" for a custom asset font if preferred
+            font_title = ImageFont.truetype("arialbd.ttf", 52) 
+            font_body = ImageFont.truetype("arial.ttf", 24)
+            font_meta = ImageFont.truetype("arial.ttf", 20)
+        except IOError:
+            logger.warning("System fonts failed to load, falling back to basic defaults.")
+            font_title = ImageFont.load_default()
+            font_body = ImageFont.load_default()
+            font_meta = ImageFont.load_default()
+            
+        # 4. Burn the Text Elements onto the template
+        
+        # Center the Featured Word horizontally in quotation marks
+        word_text = f'"{word.upper()}"'
+        w_width = draw.textlength(word_text, font=font_title)
+        word_x = (img.width - w_width) // 2
+        draw.text((word_x, 420), word_text, fill="#ffffff", font=font_title)
+        
+        # Draw username directly onto the 'Posted by:' badge field
+        draw.text((510, 605), posted_by, fill="#d1c4e9", font=font_meta)
+        
+        # Wrap and center the definition text block using textwrap
+        # width=40 acts as a maximum character threshold per line safely
+        lines = textwrap.wrap(definition, width=40)
+            
+        # Print the lines of definition down the middle section
+        y_offset = 700
+        for line in lines[:4]:  # Caps rendering to max 4 lines to prevent overflow
+            line_w = draw.textlength(line, font=font_body)
+            line_x = (img.width - line_w) // 2
+            draw.text((line_x, y_offset), line, fill="#b3a2d6", font=font_body)
+            y_offset += 36
+
+        # 5. Save out the completed masterpiece
+        file_name = f"{uuid.uuid4().hex}.png"
+        out_path = GENERATED_DIR / file_name
+        img.save(out_path)
+        
+        return file_name
 
     except Exception as e:
-        logger.error(f"Image generation failed: {e}", exc_info=True)
+        logger.error(f"Template system crashed: {e}", exc_info=True)
         raise e
