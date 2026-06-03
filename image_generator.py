@@ -1,4 +1,7 @@
 """Generate TBD dictionary card images by overlaying dynamic text onto a 2364x1773 template."""
+import os
+import base64
+import asyncio
 import logging
 import textwrap
 import uuid
@@ -7,6 +10,7 @@ import time
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from fontTools.ttLib import TTFont
+import httpx  # Ensure 'httpx' is added to your requirements.txt!
 
 logger = logging.getLogger(__name__)
 
@@ -56,67 +60,119 @@ def draw_mixed_font_text(draw, position, text, primary_font, primary_path, fallb
         draw.text((x, y), char, fill=fill, font=current_font)
         x += draw.textlength(char, font=current_font)
 
+async def upload_to_github(local_file_path: Path) -> str | None:
+    """Uploads a locally generated image directly to your GitHub repository."""
+    token = os.getenv("GITHUB_TOKEN")
+    repo = os.getenv("GITHUB_REPO")
+    
+    if not token or not repo:
+        logger.warning("GitHub auto-archive skipped: GITHUB_TOKEN or GITHUB_REPO not configured on Render.")
+        return None
+
+    filename = local_file_path.name
+    github_api_url = f"https://api.github.com/repos/{repo}/contents/generated_cards/{filename}"
+    
+    try:
+        with open(local_file_path, "rb") as f:
+            encoded_content = base64.b64encode(f.read()).decode("utf-8")
+            
+        payload = {
+            "message": f"🤖 Bot Auto-Archive: Saved/Updated dictionary card {filename}",
+            "content": encoded_content,
+            "branch": "main"  # Swap to "master" if your repository uses master
+        }
+        headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.put(github_api_url, json=payload, headers=headers)
+            if response.status_code in [201, 200]:
+                logger.info(f"✨ Successfully backed up {filename} to GitHub!")
+                return response.json()["content"]["download_url"]
+            else:
+                logger.error(f"GitHub upload failed ({response.status_code}): {response.text}")
+                return None
+    except Exception as e:
+        logger.error(f"Failed to push asset to GitHub: {e}", exc_info=True)
+        return None
+
+def _sync_draw_card(word: str, definition: str, posted_by: str, pose_index: int, filename: str) -> str:
+    """
+    Pure synchronous canvas operations shifted out of the main execution sequence.
+    This keeps Discord connection lifelines open while drawing large canvas pixels.
+    """
+    # 1. Load, convert to RGB, and force size
+    img = Image.open(TEMPLATE_PATH).convert("RGB")
+    if img.size != TARGET_SIZE:
+        img = img.resize(TARGET_SIZE, Image.Resampling.LANCZOS)
+        
+    draw = ImageDraw.Draw(img)
+
+    # 2. Setup Fonts
+    try:
+        font_title = ImageFont.truetype(str(FONT_TITLE_PATH), 150)
+        font_body = ImageFont.truetype(str(FONT_BODY_PATH), 50)
+        font_meta = ImageFont.truetype(str(FONT_META_PATH), 40)
+        font_fallback = ImageFont.truetype(str(FONT_FALLBACK_PATH), 40)
+    except Exception:
+        font_title = font_body = font_meta = font_fallback = ImageFont.load_default()
+
+    # 3. Draw Word with Stroke (Centered at 1182px)
+    word_text = f"“{word.upper()}”"
+    w_w = draw.textlength(word_text, font=font_title)
+    draw.text(
+        (1182 - (w_w / 2), ANCHOR_WORD[1]), 
+        word_text, 
+        fill=DARK_PURPLE,        
+        font=font_title, 
+        stroke_width=6,          
+        stroke_fill=PALE_PURPLE  
+    )
+
+    # 4. Draw Username
+    draw_mixed_font_text(
+        draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill=PALE_PURPLE
+    )
+
+    # 5. Draw Definition
+    wrapped_def = textwrap.wrap(definition, width=40)
+    curr_y = ANCHOR_DEFINITION[1]
+    for line in wrapped_def:
+        draw.text((ANCHOR_DEFINITION[0], curr_y), line, fill=PALE_PURPLE, font=font_body)
+        curr_y += 60
+
+    # 6. Mascot
+    cat_num = pose_index % TOTAL_CAT_MASCOTS
+    cat_path = ASSETS_DIR / f"cat_{cat_num}.png"
+    if cat_path.exists():
+        cat_mascot = Image.open(cat_path).convert("RGBA")
+        img.paste(cat_mascot, ANCHOR_CAT, cat_mascot)
+
+    # 7. Fast Save Execution Loop
+    output_path = GENERATED_DIR / filename
+    img.save(output_path, "PNG", compress_level=1, optimize=False)
+    return filename
+
 async def generate_card_image(word: str, definition: str, posted_by: str, pose_index: int = None) -> str:
+    """Asynchronous wrapper that runs calculations in a separate thread and saves to cloud repositories."""
     try:
         random.seed(time.time())
         if pose_index is None:
             pose_index = random.randint(0, TOTAL_CAT_MASCOTS - 1)
 
-        # 1. Load, convert to RGB, and force size
-        img = Image.open(TEMPLATE_PATH).convert("RGB")
-        if img.size != TARGET_SIZE:
-            img = img.resize(TARGET_SIZE, Image.Resampling.LANCZOS)
-            
-        draw = ImageDraw.Draw(img)
-
-        # 2. Setup Fonts
-        try:
-            font_title = ImageFont.truetype(str(FONT_TITLE_PATH), 150)
-            font_body = ImageFont.truetype(str(FONT_BODY_PATH), 50)
-            font_meta = ImageFont.truetype(str(FONT_META_PATH), 40)
-            font_fallback = ImageFont.truetype(str(FONT_FALLBACK_PATH), 40)
-        except Exception:
-            font_title = font_body = font_meta = font_fallback = ImageFont.load_default()
-
-        # 3. Draw Word with Stroke (Centered at 1182px)
-        # Using stroke_width and stroke_fill for that outlined effect
-        word_text = f"“{word.upper()}”"
-        w_w = draw.textlength(word_text, font=font_title)
-        draw.text(
-            (1182 - (w_w / 2), ANCHOR_WORD[1]), 
-            word_text, 
-            fill=DARK_PURPLE,        # Inner text color
-            font=font_title, 
-            stroke_width=6,          # Thickness of the outline
-            stroke_fill=PALE_PURPLE  # Outline color
-        )
-
-        # 4. Draw Username
-        draw_mixed_font_text(
-            draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill=PALE_PURPLE
-        )
-
-        # 5. Draw Definition
-        wrapped_def = textwrap.wrap(definition, width=40)
-        curr_y = ANCHOR_DEFINITION[1]
-        for line in wrapped_def:
-            draw.text((ANCHOR_DEFINITION[0], curr_y), line, fill=PALE_PURPLE, font=font_body)
-            curr_y += 60
-
-        # 6. Mascot
-        cat_num = pose_index % TOTAL_CAT_MASCOTS
-        cat_path = ASSETS_DIR / f"cat_{cat_num}.png"
-        if cat_path.exists():
-            cat_mascot = Image.open(cat_path).convert("RGBA")
-            img.paste(cat_mascot, ANCHOR_CAT, cat_mascot)
-
-        # 7. Save result
         filename = f"{uuid.uuid4()}.png"
         output_path = GENERATED_DIR / filename
-        img.save(output_path, "PNG", optimize=True)
+
+        # Offload the heavy synchronous PIL rendering to a safe background thread worker
+        await asyncio.to_thread(_sync_draw_card, word, definition, posted_by, pose_index, filename)
+        
+        # Fire-and-forget backup straight up to your GitHub directory structure
+        await upload_to_github(output_path)
         
         return filename
 
     except Exception as e:
-        logger.error(f"Image generation failed: {e}", exc_info=True)
+        logger.error(f"Image generation core routine failed: {e}", exc_info=True)
         raise e
