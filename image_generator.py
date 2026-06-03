@@ -14,12 +14,13 @@ TEMPLATE_PATH = ASSETS_DIR / "card_template.png"
 GENERATED_DIR = ROOT_DIR / "generated"
 GENERATED_DIR.mkdir(exist_ok=True)
 
+# 3 Custom Font Assignments + 1 Fallback Safety Net Font
 FONT_TITLE_PATH = ASSETS_DIR / "title_font.ttf"
 FONT_BODY_PATH = ASSETS_DIR / "body_font.ttf"
 FONT_META_PATH = ASSETS_DIR / "meta_font.ttf"
 FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf" 
 
-TOTAL_CAT_MASCOTS = 16 
+TOTAL_CAT_MASCOTS = 18 
 
 def has_glyph(font_path: Path, glyph: str) -> bool:
     """Checks if a font file contains the rendering glyph for a specific character."""
@@ -65,7 +66,7 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
             cat_y = img_rgba.height - cat_mascot.height - 40
             img_rgba.alpha_composite(cat_mascot, dest=(cat_x, cat_y))
 
-        # Preserve color profile integrity by pasting onto a clean canvas
+        # Preserve color profile integrity by pasting onto a clean solid background canvas
         img = Image.new("RGB", img_rgba.size, (0, 0, 0))
         img.paste(img_rgba, (0, 0), img_rgba)
         
@@ -73,31 +74,31 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         
         # 3. Configure Fonts & Sizes based on reference image proportions
         try:
-            font_intro = ImageFont.truetype("arial.ttf", 22)             # Small intro text
-            font_title = ImageFont.truetype(str(FONT_TITLE_PATH), 90)    # Massive, bold main word
+            # Reusing FONT_BODY_PATH at size 22 to guarantee the intro line works on all host systems
+            font_intro = ImageFont.truetype(str(FONT_BODY_PATH), 22)      
+            font_title = ImageFont.truetype(str(FONT_TITLE_PATH), 90)    # Massive main word
             font_meta = ImageFont.truetype(str(FONT_META_PATH), 26)      # Username next to badge
             font_fallback = ImageFont.truetype(str(FONT_FALLBACK_PATH), 26)
-            font_body = ImageFont.truetype(str(FONT_BODY_PATH), 34)      # Highly readable definition
+            font_body = ImageFont.truetype(str(FONT_BODY_PATH), 34)      # Readable left-aligned body
         except IOError:
             logger.warning("Fonts failed to load, falling back to basic defaults.")
             font_intro = font_title = font_body = font_meta = font_fallback = ImageFont.load_default()
             
         # 4. Burn Text Elements (Mapped to Reference Image layout)
         
-        # A. Intro sub-header line
+        # A. Intro sub-header line (Centered)
         intro_text = "today's word entry is..."
         intro_w = draw.textlength(intro_text, font=font_intro)
         intro_x = (img.width - intro_w) // 2
         draw.text((intro_x, 335), intro_text, fill="#ffffff", font=font_intro)
         
-        # B. Main Featured Word (Centered, giant, wrapped in stylized quotes)
+        # B. Main Featured Word (Centered, giant, wrapped in stylized curly quotes)
         word_text = f'“{word.upper()}”'
         word_w = draw.textlength(word_text, font=font_title)
         word_x = (img.width - word_w) // 2
         draw.text((word_x, 370), word_text, fill="#ffffff", font=font_title)
         
-        # C. Username (Perfectly left-aligned right after the "Posted by:" visual badge)
-        # 500x matches the right edge of that purple pill box container on the divider bar
+        # C. Username (Left-aligned right after the "Posted by:" visual badge container)
         draw_mixed_font_text(
             draw=draw, 
             position=(505, 592), 
@@ -108,22 +109,9 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
             fill="#b3a2d6"
         )
         
-        # D. Definition Block (Left-aligned text layout below the middle bar, wrapped safely)
-        # width=32 prevents text from bleeding into the cat sticker's footprint on the right
+        # D. Definition Block (Left-aligned below the middle bar, bounded safely)
+        # width=32 keeps description text inside the safe left margin columns
         lines = textwrap.wrap(definition, width=32)
         y_offset = 680
         for line in lines[:4]:
-            # Left aligned position matches the visual start of the graphic divider elements on the left
-            draw.text((140, y_offset), line, fill="#b3a2d6", font=font_body)
-            y_offset += 46
-
-        # 5. Save output
-        file_name = f"{uuid.uuid4().hex}.png"
-        out_path = GENERATED_DIR / file_name
-        img.save(out_path)
-        
-        return file_name
-
-    except Exception as e:
-        logger.error(f"Template system crashed: {e}", exc_info=True)
-        raise e
+            # X coordinate 140 lines up vertically
