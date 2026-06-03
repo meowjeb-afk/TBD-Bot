@@ -20,8 +20,11 @@ def is_running() -> bool:
     return _ready and _bot is not None and not _bot.is_closed()
 
 def _build_bot(db) -> commands.Bot:
+    # FIX: Start with default intents but explicitly turn off voice state tracking
     intents = discord.Intents.default()
+    intents.voice_states = False  # Tells Discord not to expect voice access
     intents.message_content = False
+    
     bot = commands.Bot(command_prefix="!", intents=intents)
     bot.db = db
     DEV_GUILD_ID = 1469032638395191298 
@@ -54,9 +57,26 @@ def _build_bot(db) -> commands.Bot:
                 await interaction.followup.send(f"`{word_clean}` is already in the dictionary.")
                 return
             posted_by = interaction.user.display_name
-            count = await db.words.count_documents({})
-            image_file = await generate_card_image(word=word_clean, definition=definition.strip(), posted_by=posted_by, pose_index=count % 6)
-            doc = {"id": str(uuid.uuid4()), "word": word_clean, "word_lower": word_lower, "definition": definition.strip(), "posted_by": posted_by, "discord_user_id": str(interaction.user.id), "image_file": image_file, "upvotes": 0, "created_at": datetime.now(timezone.utc).isoformat()}
+            
+            # FIX: Set pose_index to None so image_generator handle the dynamic/forced randomization properly!
+            image_file = await generate_card_image(
+                word=word_clean, 
+                definition=definition.strip(), 
+                posted_by=posted_by, 
+                pose_index=None
+            )
+            
+            doc = {
+                "id": str(uuid.uuid4()), 
+                "word": word_clean, 
+                "word_lower": word_lower, 
+                "definition": definition.strip(), 
+                "posted_by": posted_by, 
+                "discord_user_id": str(interaction.user.id), 
+                "image_file": image_file, 
+                "upvotes": 0, 
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
             await db.words.insert_one(doc)
             path = GENERATED_DIR / image_file
             with open(path, "rb") as f:
