@@ -67,7 +67,7 @@ async def start_bot(token: str, db_connection) -> None:
             await interaction.response.defer(ephemeral=True)
 
             try:
-                # 💡 NOTE: If your collection is not named 'cards', change '.cards' below!
+                # Case-insensitive query targeting the 'cards' collection
                 query = {"word": {"$regex": f"^{target_word}$", "$options": "i"}}
                 result = await active_bot.db.cards.delete_one(query)
                 
@@ -88,7 +88,7 @@ async def start_bot(token: str, db_connection) -> None:
                 await interaction.followup.send(f"❌ **Database Error:** `{str(mongo_error)}`", ephemeral=True)
 
         # ==========================================
-        # COMMAND 2: SLASH COMMAND - /list (FIXED TIMEOUT)
+        # COMMAND 2: SLASH COMMAND - /list
         # ==========================================
         @active_bot.tree.command(
             name="list", 
@@ -99,11 +99,11 @@ async def start_bot(token: str, db_connection) -> None:
                 await interaction.response.send_message("❌ Database connection offline.", ephemeral=True)
                 return
 
-            # 🔥 THE CRITICAL TIMEOUT FIX: Tells Discord to wait for data processing
+            # Tells Discord to wait so it never hits the 3-second timeout limit again
             await interaction.response.defer(ephemeral=False)
 
             try:
-                # 💡 NOTE: If your collection is not named 'cards', change '.cards' below!
+                # Sorts alphabetically by the 'word' field
                 cursor = active_bot.db.cards.find().sort("word", 1)
                 documents = await cursor.to_list(length=100)
 
@@ -111,16 +111,13 @@ async def start_bot(token: str, db_connection) -> None:
                     await interaction.followup.send("📖 The dictionary is currently empty!")
                     return
 
-                # Build public string summary output loop safely
                 word_list = []
                 for doc in documents:
-                    # Adaptive safety check if you stored keys under 'word' or 'title'
                     w = doc.get("word") or doc.get("title") or "Unknown Schema Element"
                     word_list.append(f"• **{w}**")
 
                 message_content = "📖 **Current TBD Dictionary Entries:**\n" + "\n".join(word_list)
                 
-                # Enforce safety restrictions on character lengths
                 if len(message_content) > 1950:
                     message_content = message_content[:1900] + "\n...and more entries!"
 
@@ -131,23 +128,3 @@ async def start_bot(token: str, db_connection) -> None:
                 await interaction.followup.send(f"❌ Failed to fetch list: `{str(e)}`")
 
         # ==========================================
-        # COMMAND 3: SLASH COMMAND - /debuglist
-        # ==========================================
-        @active_bot.tree.command(
-            name="debuglist", 
-            description="[TESTING ONLY] Inspect raw database structure."
-        )
-        async def debuglist_command(interaction: discord.Interaction):
-            if interaction.user.id != DEVELOPER_USER_ID:
-                await interaction.response.send_message("❌ **Permission Denied.**", ephemeral=True)
-                return
-
-            if active_bot.db is None:
-                await interaction.response.send_message("❌ **Database Connection Unavailable.**", ephemeral=True)
-                return
-
-            await interaction.response.defer(ephemeral=True)
-
-            try:
-                # 💡 NOTE: If your collection is not named 'cards', change '.cards' below!
-                cursor = active_bot.db.cards.find().sort("_id
