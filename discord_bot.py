@@ -66,20 +66,22 @@ async def start_bot(token: str, db_connection) -> None:
                 )
                 return
 
-            # Format the incoming target query string clean and case-insensitive
-            target_word = word.strip().upper()
+            # Clean leading/trailing spaces from input
+            target_word = word.strip()
             
+            # Defer response immediately to prevent standard 3-second Discord timeouts
             await interaction.response.defer(ephemeral=True)
 
             try:
-                # Target the exact collection matching your backend structure
-                # This drops documents from the 'cards' collection inside 'tbd_dictionary'
-                result = await active_bot.db.cards.delete_one({"word": target_word})
+                # 🛠️ FIXED: Uses case-insensitive regex line anchors (^ and $)
+                # This drops documents regardless of lowercase or uppercase mismatches.
+                query = {"word": {"$regex": f"^{target_word}$", "$options": "i"}}
+                result = await active_bot.db.cards.delete_one(query)
                 
                 if result.deleted_count > 0:
                     await interaction.followup.send(
                         f"🗑️ **Testing Purge Successful:**\n"
-                        f"The word entry `“{target_word}”` was vaporized from the MongoDB cluster collection.",
+                        f"The word entry matching `“{target_word}”` was vaporized from the collection.",
                         ephemeral=True
                     )
                     logger.info(f"Developer {interaction.user} forcefully dropped word '{target_word}' via slash route.")
