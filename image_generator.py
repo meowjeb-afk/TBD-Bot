@@ -74,7 +74,6 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         
         # 3. Configure Fonts & Sizes based on reference image proportions
         try:
-            # Reusing FONT_BODY_PATH at size 22 to guarantee the intro line works on all host systems
             font_intro = ImageFont.truetype(str(FONT_BODY_PATH), 22)      
             font_title = ImageFont.truetype(str(FONT_TITLE_PATH), 90)    # Massive main word
             font_meta = ImageFont.truetype(str(FONT_META_PATH), 26)      # Username next to badge
@@ -93,4 +92,21 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         draw.text((intro_x, 335), intro_text, fill="#ffffff", font=font_intro)
         
         # B. Main Featured Word (Centered, giant, wrapped in stylized curly quotes)
-        word_text = f'“{word.upper()}
+        # --- FIXED SECTION: String is now properly closed with double quotes ---
+        word_text = f"“{word.upper()}”"
+        
+        word_w = draw.textlength(word_text, font=font_title)
+        word_x = (img.width - word_w) // 2
+        draw.text((word_x, 420), word_text, fill="#ffffff", font=font_title)
+
+        # Save out the complete png frame file
+        filename = f"{word.strip().lower()}_{pose_index}.png"
+        output_path = GENERATED_DIR / filename
+        img.save(output_path)
+        
+        logger.info(f"Successfully generated dictionary asset frame: {filename}")
+        return filename
+
+    except Exception as e:
+        logger.error(f"Image generation core broke down: {e}", exc_info=True)
+        raise e
