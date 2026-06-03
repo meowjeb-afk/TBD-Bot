@@ -23,7 +23,7 @@ FONT_BODY_PATH = ASSETS_DIR / "body_font.ttf"
 FONT_META_PATH = ASSETS_DIR / "meta_font.ttf"
 FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf"
 
-TOTAL_CAT_MASCOTS = 18
+TOTAL_CAT_MASCOTS = 11
 
 # Krita-verified Top-Left Anchor Coordinates
 ANCHOR_INTRO      = (698, 606) 
