@@ -30,7 +30,7 @@ ANCHOR_INTRO      = (810, 509)
 ANCHOR_WORD       = (363, 675) 
 ANCHOR_USERNAME   = (1023, 984)  
 ANCHOR_DEFINITION = (276, 1158) 
-ANCHOR_CAT        = (1401, 1023) 
+ANCHOR_CAT        = (1266, 906) 
 
 def has_glyph(font_path: Path, glyph: str) -> bool:
     """Checks if a font file contains the rendering glyph for a specific character."""
