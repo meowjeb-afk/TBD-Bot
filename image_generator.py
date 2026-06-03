@@ -73,17 +73,20 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         except Exception:
             font_title = font_body = font_meta = font_fallback = ImageFont.load_default()
 
-        # A. Main Word (Centered horizontally at the new 1182px midpoint) - Pale Purple
+        # A. Main Word (Centered at 1182px) - PALE PURPLE
+        # Updated fill to "#DCD0FF"
         word_text = f"“{word.upper()}”"
         w_w = draw.textlength(word_text, font=font_title)
         draw.text((1182 - (w_w / 2), ANCHOR_WORD[1]), word_text, fill="#DCD0FF", font=font_title)
 
-        # B. Username - Pale Purple
+        # B. Username - PALE PURPLE
+        # Updated fill to "#DCD0FF"
         draw_mixed_font_text(
             draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill="#DCD0FF"
         )
 
-        # C. Definition (Left-aligned) - Pale Purple
+        # C. Definition (Left-aligned) - PALE PURPLE
+        # Updated fill to "#DCD0FF"
         wrapped_def = textwrap.wrap(definition, width=40)
         curr_y = ANCHOR_DEFINITION[1]
         for line in wrapped_def:
