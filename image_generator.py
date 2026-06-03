@@ -3,6 +3,7 @@ import logging
 import textwrap
 import uuid
 import random
+import time
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from fontTools.ttLib import TTFont
@@ -25,11 +26,11 @@ FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf"
 TOTAL_CAT_MASCOTS = 18
 
 # Krita-verified Top-Left Anchor Coordinates
-ANCHOR_INTRO      = (885, 613) 
+ANCHOR_INTRO      = (810, 509) 
 ANCHOR_WORD       = (363, 675) 
 ANCHOR_USERNAME   = (1023, 984)  
-ANCHOR_DEFINITION = (193, 1253) 
-ANCHOR_CAT        = (1307, 888) 
+ANCHOR_DEFINITION = (276, 1158) 
+ANCHOR_CAT        = (1401, 1023) 
 
 def has_glyph(font_path: Path, glyph: str) -> bool:
     """Checks if a font file contains the rendering glyph for a specific character."""
@@ -54,9 +55,10 @@ def draw_mixed_font_text(draw, position, text, primary_font, primary_path, fallb
         x += draw.textlength(char, font=current_font)
 
 async def generate_card_image(word: str, definition: str, posted_by: str, pose_index: int = None) -> str:
-    """Generates a high-resolution dictionary card using custom anchors and random mascot cycling."""
+    """Generates a high-resolution dictionary card using custom anchors and forced random cat selection."""
     try:
-        # Randomize cat if no index provided
+        # Force a new seed and pick a random index if none is provided
+        random.seed(time.time())
         if pose_index is None:
             pose_index = random.randint(0, TOTAL_CAT_MASCOTS - 1)
 
@@ -96,12 +98,12 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
             draw.text((ANCHOR_DEFINITION[0] + (300 - (l_w / 2)), curr_y), line, fill="#d1d1d1", font=font_body)
             curr_y += 60
 
-        # E. Mascot (Scaled and placed at your anchor)
+        # E. Mascot (Pre-sized 700x700 assets)
         cat_num = pose_index % TOTAL_CAT_MASCOTS
         cat_path = ASSETS_DIR / f"cat_{cat_num}.png"
         if cat_path.exists():
             cat_mascot = Image.open(cat_path).convert("RGBA")
-            cat_mascot.thumbnail((600, 600))
+            # Assets are already standardized; direct paste
             img.paste(cat_mascot, ANCHOR_CAT, cat_mascot)
 
         # Save result
