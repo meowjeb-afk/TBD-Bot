@@ -29,7 +29,7 @@ TOTAL_CAT_MASCOTS = 18
 ANCHOR_INTRO      = (698, 606) 
 ANCHOR_WORD       = (363, 675) 
 ANCHOR_USERNAME   = (1023, 984)  
-ANCHOR_DEFINITION = (276, 1158) 
+ANCHOR_DEFINITION = (184, 1165) 
 ANCHOR_CAT        = (1266, 906) 
 
 def has_glyph(font_path: Path, glyph: str) -> bool:
