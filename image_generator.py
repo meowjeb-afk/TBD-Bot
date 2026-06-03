@@ -4,6 +4,7 @@ import textwrap
 import uuid
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
+from fontTools.ttLib import TTFont
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +19,32 @@ GENERATED_DIR.mkdir(exist_ok=True)
 FONT_TITLE_PATH = ASSETS_DIR / "title_font.ttf"
 FONT_BODY_PATH = ASSETS_DIR / "body_font.ttf"
 FONT_META_PATH = ASSETS_DIR / "meta_font.ttf"
+FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf"
 
 TOTAL_CAT_MASCOTS = 18
+
+def has_glyph(font_path: Path, glyph: str) -> bool:
+    """Checks if a font file contains the rendering glyph for a specific character."""
+    try:
+        font = TTFont(str(font_path))
+        for table in font['cmap'].tables:
+            if ord(glyph) in table.cmap:
+                return True
+        return False
+    except Exception:
+        return False
+
+def draw_mixed_font_text(draw, position, text, primary_font, primary_path, fallback_font, fill):
+    """Draws text character-by-character, swinging to fallback fonts for Unicode styles."""
+    x, y = position
+    for char in text:
+        if has_glyph(primary_path, char) or not FONT_FALLBACK_PATH.exists():
+            current_font = primary_font
+        else:
+            current_font = fallback_font
+            
+        draw.text((x, y), char, fill=fill, font=current_font)
+        x += draw.textlength(char, font=current_font)
 
 async def generate_card_image(word: str, definition: str, posted_by: str, pose_index: int = 0) -> str:
     """Generates a dictionary card mapped to specific coordinate constraints."""
@@ -29,18 +54,19 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         if not TEMPLATE_PATH.exists():
             raise FileNotFoundError(f"Template not found at {TEMPLATE_PATH}")
         
-        # 1. Load Template in RGB mode to ensure vivid color fidelity
+        # Load Template in RGB mode
         img = Image.open(TEMPLATE_PATH).convert("RGB")
         draw = ImageDraw.Draw(img)
 
-        # 2. Load Fonts with sizes tuned to your layout
+        # Load Fonts
         try:
             font_title = ImageFont.truetype(str(FONT_TITLE_PATH), 70)
             font_body = ImageFont.truetype(str(FONT_BODY_PATH), 30)
             font_meta = ImageFont.truetype(str(FONT_META_PATH), 22)
             font_intro = ImageFont.truetype(str(FONT_BODY_PATH), 22)
+            font_fallback = ImageFont.truetype(str(FONT_FALLBACK_PATH), 22)
         except Exception:
-            font_title = font_body = font_meta = font_intro = ImageFont.load_default()
+            font_title = font_body = font_meta = font_intro = font_fallback = ImageFont.load_default()
 
         # 3. PRECISE PLACEMENT MAPPING
         
@@ -54,9 +80,11 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         w_w = draw.textlength(word_text, font=font_title)
         draw.text(((img.width - w_w) / 2, 420), word_text, fill="#ffffff", font=font_title)
 
-        # C. User metadata (Middle stripe)
+        # C. User metadata (Unicode-aware rendering)
         draw.text((370, 595), "Posted by:", fill="#ffffff", font=font_meta)
-        draw.text((495, 595), posted_by, fill="#ffffff", font=font_meta)
+        draw_mixed_font_text(
+            draw, (495, 595), posted_by, font_meta, FONT_META_PATH, font_fallback, fill="#ffffff"
+        )
 
         # D. Definition Area (Left-bottom box, width-constrained)
         wrapped_def = textwrap.wrap(definition, width=35)
