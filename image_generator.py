@@ -26,8 +26,8 @@ FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf"
 TOTAL_CAT_MASCOTS = 11
 
 # Krita-verified Top-Left Anchor Coordinates
-ANCHOR_WORD       = (431, 694) 
-ANCHOR_USERNAME   = (1083, 1517)  
+ANCHOR_WORD       = (425, 694) 
+ANCHOR_USERNAME   = (1105, 1514)  
 ANCHOR_DEFINITION = (324, 1006) 
 ANCHOR_CAT        = (1371, 741)
 
