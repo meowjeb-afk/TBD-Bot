@@ -26,7 +26,6 @@ FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf"
 TOTAL_CAT_MASCOTS = 11
 
 # Updated Coordinates for 2364x1773
-# These anchors must be calibrated against your clean background template
 ANCHOR_WORD       = (425, 694) 
 ANCHOR_USERNAME   = (1105, 1514)  
 ANCHOR_DEFINITION = (324, 1006) 
@@ -34,6 +33,7 @@ ANCHOR_CAT        = (1371, 741)
 
 # Design Constants
 PALE_PURPLE = "#DCD0FF"
+DARK_PURPLE = "#2E1A47"  # Fill color for the word text
 TARGET_SIZE = (2364, 1773)
 
 def has_glyph(font_path: Path, glyph: str) -> bool:
@@ -62,13 +62,14 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         if pose_index is None:
             pose_index = random.randint(0, TOTAL_CAT_MASCOTS - 1)
 
-        # Load, convert, and force canvas resize
+        # 1. Load, convert to RGB, and force size
         img = Image.open(TEMPLATE_PATH).convert("RGB")
         if img.size != TARGET_SIZE:
             img = img.resize(TARGET_SIZE, Image.Resampling.LANCZOS)
             
         draw = ImageDraw.Draw(img)
 
+        # 2. Setup Fonts
         try:
             font_title = ImageFont.truetype(str(FONT_TITLE_PATH), 150)
             font_body = ImageFont.truetype(str(FONT_BODY_PATH), 50)
@@ -77,30 +78,39 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         except Exception:
             font_title = font_body = font_meta = font_fallback = ImageFont.load_default()
 
-        # 1. Draw Word (Centered horizontally at 1182px)
+        # 3. Draw Word with Stroke (Centered at 1182px)
+        # Using stroke_width and stroke_fill for that outlined effect
         word_text = f"“{word.upper()}”"
         w_w = draw.textlength(word_text, font=font_title)
-        draw.text((1182 - (w_w / 2), ANCHOR_WORD[1]), word_text, fill=PALE_PURPLE, font=font_title)
+        draw.text(
+            (1182 - (w_w / 2), ANCHOR_WORD[1]), 
+            word_text, 
+            fill=DARK_PURPLE,        # Inner text color
+            font=font_title, 
+            stroke_width=6,          # Thickness of the outline
+            stroke_fill=PALE_PURPLE  # Outline color
+        )
 
-        # 2. Draw Username (Label is now baked into the template, drawing only the name)
+        # 4. Draw Username
         draw_mixed_font_text(
             draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill=PALE_PURPLE
         )
 
-        # 3. Draw Definition
+        # 5. Draw Definition
         wrapped_def = textwrap.wrap(definition, width=40)
         curr_y = ANCHOR_DEFINITION[1]
         for line in wrapped_def:
             draw.text((ANCHOR_DEFINITION[0], curr_y), line, fill=PALE_PURPLE, font=font_body)
             curr_y += 60
 
-        # 4. Mascot
+        # 6. Mascot
         cat_num = pose_index % TOTAL_CAT_MASCOTS
         cat_path = ASSETS_DIR / f"cat_{cat_num}.png"
         if cat_path.exists():
             cat_mascot = Image.open(cat_path).convert("RGBA")
             img.paste(cat_mascot, ANCHOR_CAT, cat_mascot)
 
+        # 7. Save result
         filename = f"{uuid.uuid4()}.png"
         output_path = GENERATED_DIR / filename
         img.save(output_path, "PNG", optimize=True)
