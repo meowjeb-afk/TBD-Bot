@@ -25,11 +25,11 @@ FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf"
 
 TOTAL_CAT_MASCOTS = 11
 
-# GIMP-verified Top-Left Anchor Coordinates
-ANCHOR_WORD       = (431, 694) 
-ANCHOR_USERNAME   = (1083, 1517)  
-ANCHOR_DEFINITION = (324, 1006) 
-ANCHOR_CAT        = (1371, 741) 
+# Krita-verified Top-Left Anchor Coordinates
+ANCHOR_WORD       = (363, 675) 
+ANCHOR_USERNAME   = (1023, 984)  
+ANCHOR_DEFINITION = (184, 1165) 
+ANCHOR_CAT        = (1266, 906) 
 
 def has_glyph(font_path: Path, glyph: str) -> bool:
     """Checks if a font file contains the rendering glyph for a specific character."""
@@ -73,10 +73,10 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         except Exception:
             font_title = font_body = font_meta = font_fallback = ImageFont.load_default()
 
-        # A. Main Word (Centered at 1024px) - Pale Purple
+        # A. Main Word (Centered horizontally at the new 1182px midpoint) - Pale Purple
         word_text = f"“{word.upper()}”"
         w_w = draw.textlength(word_text, font=font_title)
-        draw.text((1024 - (w_w / 2), ANCHOR_WORD[1]), word_text, fill="#DCD0FF", font=font_title)
+        draw.text((1182 - (w_w / 2), ANCHOR_WORD[1]), word_text, fill="#DCD0FF", font=font_title)
 
         # B. Username - Pale Purple
         draw_mixed_font_text(
