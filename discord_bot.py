@@ -26,14 +26,15 @@ def is_running() -> bool:
 
 
 class CardInteractionView(discord.ui.View):
-    """
-    Adds persistent clickable Uppies and Share buttons underneath the image card.
-    Setting timeout=None keeps them functional even across bot restarts!
-    """
-    def __init__(self, bot: commands.Bot, word_lower: str):
+    """Adds persistent clickable Uppies and Share buttons underneath card layouts."""
+    def __init__(self, bot: commands.Bot, word_lower: str, initial_upvotes: int = 0):
         super().__init__(timeout=None)
         self.bot = bot
         self.word_lower = word_lower
+        
+        # Dynamically set initial counter text label on load initialization
+        if initial_upvotes > 0:
+            self.uppies_button.label = f"Uppies ({initial_upvotes})"
 
     @discord.ui.button(label="Uppies", style=discord.ButtonStyle.primary, emoji="🔺", custom_id="tbd_uppies_btn")
     async def uppies_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -41,7 +42,7 @@ class CardInteractionView(discord.ui.View):
         try:
             db = self.bot.db
             
-            # Atomically increment the upvote value inside MongoDB
+            # Atomically increment upvote records inside MongoDB context
             result = await db.words.find_one_and_update(
                 {"word_lower": self.word_lower},
                 {"$inc": {"upvotes": 1}},
@@ -50,16 +51,14 @@ class CardInteractionView(discord.ui.View):
             
             if result:
                 new_total = result.get("upvotes", 0)
-                # Live-update the button label right under the image message
                 button.label = f"Uppies ({new_total})"
                 await interaction.message.edit(view=self)
-                
                 await interaction.followup.send(f"✨ You gave Uppies to **{result['word']}**! Total: {new_total}", ephemeral=True)
             else:
-                await interaction.followup.send("Could not find this word entry in the dictionary.", ephemeral=True)
+                await interaction.followup.send("Could not locate this word inside the database.", ephemeral=True)
         except Exception as e:
-            logger.error(f"Error handling Uppies interaction: {e}")
-            await interaction.followup.send("Failed to record vote.", ephemeral=True)
+            logger.error(f"Error handling Uppies panel interaction: {e}")
+            await interaction.followup.send("Failed to log score.", ephemeral=True)
 
     @discord.ui.button(label="Share", style=discord.ButtonStyle.secondary, emoji="🔗", custom_id="tbd_share_btn")
     async def share_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -68,25 +67,21 @@ class CardInteractionView(discord.ui.View):
             db = self.bot.db
             doc = await db.words.find_one({"word_lower": self.word_lower})
             
-            if doc:
-                # Fetches the raw cdn backup link if your GitHub auto-archiver is configured
-                image_url = doc.get("github_url")
-                if image_url:
-                    await interaction.followup.send(f"📥 Permanent asset share link:\n`{image_url}`", ephemeral=True)
-                else:
-                    await interaction.followup.send(
-                        f"📢 **{doc['word']}**:\n_{doc['definition']}_\n\n*(To share the card outside Discord, right-click the file or save the image!)*", 
-                        ephemeral=True
-                    )
+            if doc and doc.get("github_url"):
+                await interaction.followup.send(f"📥 Permanent asset link:\n`{doc['github_url']}`", ephemeral=True)
+            elif doc:
+                await interaction.followup.send(
+                    f"📢 **{doc['word']}**:\n_{doc['definition']}_\n\n*(To share the card outside Discord, right-click the file or save the image!)*", 
+                    ephemeral=True
+                )
             else:
-                await interaction.followup.send("Word details missing.", ephemeral=True)
+                await interaction.followup.send("Word schema data missing.", ephemeral=True)
         except Exception as e:
-            logger.error(f"Error handling Share interaction: {e}")
-            await interaction.followup.send("Failed to generate share context.", ephemeral=True)
+            logger.error(f"Error handling Share channel logic: {e}")
+            await interaction.followup.send("Failed to compile share URL link tracking data.", ephemeral=True)
 
 
 def _build_bot(db) -> commands.Bot:
-    # Disable voice state tracking entirely
     intents = discord.Intents.default()
     intents.voice_states = False  
     intents.message_content = False
@@ -109,8 +104,7 @@ def _build_bot(db) -> commands.Bot:
     async def on_ready():
         global _ready
         _ready = True
-        
-        # Register a global blank view listener so old buttons still click after server reboots
+        # Attach listener to global scope for persistent channel tracking
         bot.add_view(CardInteractionView(bot, ""))
         logger.info(f"Discord bot ready as {bot.user}")
 
@@ -127,8 +121,8 @@ def _build_bot(db) -> commands.Bot:
                 return
             posted_by = interaction.user.display_name
             
-            # Let the image generator randomly pick one of your 11 custom cat layouts
-            image_file = await generate_card_image(
+            # Fetch both generated parameters safely 
+            image_file, github_url = await generate_card_image(
                 word=word_clean, 
                 definition=definition.strip(), 
                 posted_by=posted_by, 
@@ -143,6 +137,7 @@ def _build_bot(db) -> commands.Bot:
                 "posted_by": posted_by, 
                 "discord_user_id": str(interaction.user.id), 
                 "image_file": image_file, 
+                "github_url": github_url,
                 "upvotes": 0, 
                 "created_at": datetime.now(timezone.utc).isoformat()
             }
@@ -153,8 +148,7 @@ def _build_bot(db) -> commands.Bot:
                 data = f.read()
             file = discord.File(io.BytesIO(data), filename=f"{word_lower}.png")
             
-            # Attach the UI buttons components panel directly underneath the response
-            view = CardInteractionView(bot, word_lower)
+            view = CardInteractionView(bot, word_lower, initial_upvotes=0)
             await interaction.followup.send(content=f"**{word_clean}** added!", file=file, view=view)
         except Exception as e:
             logger.error(f"❌ COMMAND ERROR: {e}", exc_info=True)
@@ -173,7 +167,7 @@ def _build_bot(db) -> commands.Bot:
                 await interaction.followup.send(f"`{word_clean}` was not found in the dictionary.")
                 return
                 
-            # Gatekeeper configuration: Only creator or server admins can modify entries
+            # Authorization evaluation block
             is_author = str(interaction.user.id) == doc.get("discord_user_id")
             is_admin = interaction.user.guild_permissions.administrator if interaction.guild else False
             
@@ -182,12 +176,9 @@ def _build_bot(db) -> commands.Bot:
                 return
 
             posted_by = doc.get("posted_by", interaction.user.display_name)
-            
-            # Force a clean variation selection based on the tracking hash or ID length
             pose_index = len(doc.get("id", "1"))
             
-            # Regenerate high-resolution canvas layers with modified details
-            new_image_file = await generate_card_image(
+            new_image_file, new_github_url = await generate_card_image(
                 word=doc["word"], 
                 definition=new_definition.strip(), 
                 posted_by=posted_by, 
@@ -200,6 +191,7 @@ def _build_bot(db) -> commands.Bot:
                     "$set": {
                         "definition": new_definition.strip(),
                         "image_file": new_image_file,
+                        "github_url": new_github_url,
                         "updated_at": datetime.now(timezone.utc).isoformat()
                     }
                 }
@@ -210,7 +202,7 @@ def _build_bot(db) -> commands.Bot:
                 data = f.read()
             file = discord.File(io.BytesIO(data), filename=f"{word_lower}_edited.png")
             
-            view = CardInteractionView(bot, word_lower)
+            view = CardInteractionView(bot, word_lower, initial_upvotes=doc.get("upvotes", 0))
             await interaction.followup.send(
                 content=f"📝 **{doc['word']}** entry details modified successfully!", 
                 file=file, 
@@ -232,7 +224,7 @@ def _build_bot(db) -> commands.Bot:
                 return
             path = GENERATED_DIR / doc["image_file"] if doc.get("image_file") else None
             
-            view = CardInteractionView(bot, word_lower)
+            view = CardInteractionView(bot, word_lower, initial_upvotes=doc.get("upvotes", 0))
             if path and path.exists():
                 with open(path, "rb") as f:
                     data = f.read()
