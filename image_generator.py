@@ -35,30 +35,20 @@ def has_glyph(font_path: Path, glyph: str) -> bool:
         return False
 
 def draw_mixed_font_text(draw, position, text, primary_font, primary_path, fallback_font, fill):
-    """Draws text character-by-character, swinging to fallback fonts for Unicode styles."""
     x, y = position
     for char in text:
         if has_glyph(primary_path, char) or not FONT_FALLBACK_PATH.exists():
             current_font = primary_font
         else:
             current_font = fallback_font
-            
         draw.text((x, y), char, fill=fill, font=current_font)
         x += draw.textlength(char, font=current_font)
 
 async def generate_card_image(word: str, definition: str, posted_by: str, pose_index: int = 0) -> str:
-    """Generates a dictionary card mapped to specific coordinate constraints."""
     try:
-        logger.info(f"Compiling card for '{word}'")
-
-        if not TEMPLATE_PATH.exists():
-            raise FileNotFoundError(f"Template not found at {TEMPLATE_PATH}")
-        
-        # Load Template in RGB mode
         img = Image.open(TEMPLATE_PATH).convert("RGB")
         draw = ImageDraw.Draw(img)
 
-        # Load Fonts
         try:
             font_title = ImageFont.truetype(str(FONT_TITLE_PATH), 70)
             font_body = ImageFont.truetype(str(FONT_BODY_PATH), 30)
@@ -68,32 +58,29 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         except Exception:
             font_title = font_body = font_meta = font_intro = font_fallback = ImageFont.load_default()
 
-        # 3. PRECISE PLACEMENT MAPPING
-        
-        # A. Intro sub-header (Top box)
+        # A. Intro sub-header
         intro_text = "today's word entry is..."
         i_w = draw.textlength(intro_text, font=font_intro)
         draw.text(((img.width - i_w) / 2, 335), intro_text, fill="#ffffff", font=font_intro)
 
-        # B. Main Featured Word (Word entry space)
+        # B. Main Word
         word_text = f"“{word.upper()}”"
         w_w = draw.textlength(word_text, font=font_title)
         draw.text(((img.width - w_w) / 2, 420), word_text, fill="#ffffff", font=font_title)
 
-        # C. User metadata (Unicode-aware rendering)
-        draw.text((370, 595), "Posted by:", fill="#ffffff", font=font_meta)
+        # C. Username (Now clean and aligned to button)
         draw_mixed_font_text(
             draw, (495, 595), posted_by, font_meta, FONT_META_PATH, font_fallback, fill="#ffffff"
         )
 
-        # D. Definition Area (Left-bottom box, width-constrained)
+        # D. Definition
         wrapped_def = textwrap.wrap(definition, width=35)
         d_y = 690 
         for line in wrapped_def:
             draw.text((60, d_y), line, fill="#d1d1d1", font=font_body)
             d_y += 45
 
-        # E. Mascot Placement (Bottom-right box)
+        # E. Mascot
         cat_num = pose_index % TOTAL_CAT_MASCOTS
         cat_path = ASSETS_DIR / f"cat_{cat_num}.png"
         if cat_path.exists():
@@ -101,13 +88,11 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
             cat_mascot.thumbnail((250, 250)) 
             img.paste(cat_mascot, (680, 680), cat_mascot)
 
-        # 4. Save with high-quality settings
         filename = f"{uuid.uuid4()}.png"
         output_path = GENERATED_DIR / filename
         img.save(output_path, "PNG", quality=100)
         
         return filename
-
     except Exception as e:
         logger.error(f"Image generation failed: {e}", exc_info=True)
         raise e
