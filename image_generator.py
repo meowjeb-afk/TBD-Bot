@@ -14,15 +14,12 @@ TEMPLATE_PATH = ASSETS_DIR / "card_template.png"
 GENERATED_DIR = ROOT_DIR / "generated"
 GENERATED_DIR.mkdir(exist_ok=True)
 
-# Define paths for your custom fonts
 FONT_TITLE_PATH = ASSETS_DIR / "title_font.ttf"
 FONT_BODY_PATH = ASSETS_DIR / "body_font.ttf"
 FONT_META_PATH = ASSETS_DIR / "meta_font.ttf"
-
-# Robust fallback font for crazy unicode characters/symbols (e.g., Google Noto Sans)
 FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf" 
 
-TOTAL_CAT_MASCOTS = 18 
+TOTAL_CAT_MASCOTS = 16 
 
 def has_glyph(font_path: Path, glyph: str) -> bool:
     """Checks if a font file contains the rendering glyph for a specific character."""
@@ -36,22 +33,15 @@ def has_glyph(font_path: Path, glyph: str) -> bool:
         return False
 
 def draw_mixed_font_text(draw, position, text, primary_font, primary_path, fallback_font, fill):
-    """
-    Draws text character-by-character. If the primary font lacks the character,
-    it falls back to the robust unicode font automatically.
-    """
+    """Draws text character-by-character, swinging to fallback fonts for Unicode styles."""
     x, y = position
     for char in text:
-        # Determine which font has the character
         if has_glyph(primary_path, char) or not FONT_FALLBACK_PATH.exists():
             current_font = primary_font
         else:
             current_font = fallback_font
             
-        # Draw the single character
         draw.text((x, y), char, fill=fill, font=current_font)
-        
-        # Move the cursor forward by the width of that character
         x += draw.textlength(char, font=current_font)
 
 async def generate_card_image(word: str, definition: str, posted_by: str, pose_index: int = 0) -> str:
@@ -62,59 +52,67 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         if not TEMPLATE_PATH.exists():
             raise FileNotFoundError(f"Missing background template asset at {TEMPLATE_PATH}")
 
-        img = Image.open(TEMPLATE_PATH).convert("RGBA")
+        # 1. Open template as RGBA to keep original digital color spaces accurate
+        img_rgba = Image.open(TEMPLATE_PATH).convert("RGBA")
         
-        # Mascot Setup
+        # 2. Dynamically paste the selected cat mascot
         cat_num = pose_index % TOTAL_CAT_MASCOTS
         cat_path = ASSETS_DIR / f"cat_{cat_num}.png"
         if cat_path.exists():
             cat_mascot = Image.open(cat_path).convert("RGBA")
-            cat_x = img.width - cat_mascot.width - 40
-            cat_y = img.height - cat_mascot.height - 40
-            img.alpha_composite(cat_mascot, dest=(cat_x, cat_y))
+            # Anchor cat directly into the bottom-right corner safely
+            cat_x = img_rgba.width - cat_mascot.width - 25
+            cat_y = img_rgba.height - cat_mascot.height - 25
+            img_rgba.alpha_composite(cat_mascot, dest=(cat_x, cat_y))
 
-        img = img.convert("RGB")
+        # FIX COLOR SATURATION: Composite the RGBA canvas over an empty solid background 
+        # instead of a raw destructive .convert("RGB") call.
+        img = Image.new("RGB", img_rgba.size, (0, 0, 0))
+        img.paste(img_rgba, (0, 0), img_rgba)
+        
         draw = ImageDraw.Draw(img)
         
-        # Load Fonts
+        # 3. Configure Fonts
         try:
             font_title = ImageFont.truetype(str(FONT_TITLE_PATH), 52) 
-            font_body = ImageFont.truetype(str(FONT_BODY_PATH), 24)
-            font_meta = ImageFont.truetype(str(FONT_META_PATH), 20)
-            
-            # Load fallback font at the exact same size as the metadata font
-            font_fallback = ImageFont.truetype(str(FONT_FALLBACK_PATH), 20)
-        except IOError as e:
-            logger.warning(f"Fonts failed to load ({e}), using defaults.")
+            font_body = ImageFont.truetype(str(FONT_BODY_PATH), 28)  # Bumped up slightly for readability
+            font_meta = ImageFont.truetype(str(FONT_META_PATH), 22)  # Fits nicely in the pill badge
+            font_fallback = ImageFont.truetype(str(FONT_FALLBACK_PATH), 22)
+        except IOError:
+            logger.warning("Fonts failed to load, falling back to basic defaults.")
             font_title = font_body = font_meta = font_fallback = ImageFont.load_default()
             
-        # 1. Draw Title Word
+        # 4. Burn Text Elements (Corrected Coordinates)
+        
+        # Title Word - Placed cleanly in the open upper sector below the logo wave
         word_text = f'"{word.upper()}"'
         w_width = draw.textlength(word_text, font=font_title)
         word_x = (img.width - w_width) // 2
-        draw.text((word_x, 420), word_text, fill="#ffffff", font=font_title)
+        draw.text((word_x, 320), word_text, fill="#ffffff", font=font_title)
         
-        # 2. Draw Username (Using our new unicode-safe handler!)
-        # Adjust (510, 605) to perfectly position the starting character inside your layout badge
+        # Definition Block - Centered right in the primary dark container area
+        lines = textwrap.wrap(definition, width=42)
+        y_offset = 450
+        for line in lines[:5]:
+            line_w = draw.textlength(line, font=font_body)
+            line_x = (img.width - line_w) // 2
+            draw.text((line_x, y_offset), line, fill="#b3a2d6", font=font_body)
+            y_offset += 40
+
+        # Username - Placed perfectly inside the "Posted by:" layout capsule badge shape
+        # X: 485 places it right next to the "Posted by:" inner text
+        # Y: 602 centers it vertically within the bounds of that specific badge line
         draw_mixed_font_text(
             draw=draw, 
-            position=(510, 605), 
+            position=(485, 602), 
             text=posted_by, 
             primary_font=font_meta, 
             primary_path=FONT_META_PATH, 
             fallback_font=font_fallback, 
-            fill="#d1c4e9"
+            fill="#ffffff"
         )
-        
-        # 3. Wrap and Draw Definition
-        lines = textwrap.wrap(definition, width=40)
-        y_offset = 700
-        for line in lines[:4]:
-            line_w = draw.textlength(line, font=font_body)
-            line_x = (img.width - line_w) // 2
-            draw.text((line_x, y_offset), line, fill="#b3a2d6", font=font_body)
-            y_offset += 36
 
+        # 5. Save output
         file_name = f"{uuid.uuid4().hex}.png"
         out_path = GENERATED_DIR / file_name
         img.save(out_path)
