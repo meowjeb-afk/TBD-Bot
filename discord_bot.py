@@ -15,7 +15,7 @@ from image_generator import generate_card_image, GENERATED_DIR
 logger = logging.getLogger(__name__)
 
 # Explicit developer security account check
-DEVELOPER_USER_ID = 1504636196096184471 
+DEVELOPER_USER_ID = 552956853147926532 
 
 _bot: commands.Bot | None = None
 _ready = False
@@ -32,7 +32,7 @@ def _build_bot(db) -> commands.Bot:
     # Attach the cloud database handle directly to the bot object
     bot.db = db
 
-    # === UPDATE THIS WITH YOUR ACTUAL DISCORD SERVER ID ===
+    # === DEV SERVER ID FOR INSTANT COMMAND SYNCING ===
     DEV_GUILD_ID = 1469032638395191298 
     # ======================================================
 
@@ -184,7 +184,6 @@ def _build_bot(db) -> commands.Bot:
         await interaction.response.defer(ephemeral=True)
 
         try:
-            # Fixed target tracking field matching against case-insensitive text paths
             query = {"word": {"$regex": f"^{target_word}$", "$options": "i"}}
             result = await bot.db.words.delete_one(query)
             
