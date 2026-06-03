@@ -2,6 +2,7 @@
 import logging
 import textwrap
 import uuid
+import random
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from fontTools.ttLib import TTFont
@@ -27,10 +28,11 @@ TOTAL_CAT_MASCOTS = 18
 ANCHOR_INTRO      = (810, 509) 
 ANCHOR_WORD       = (363, 675) 
 ANCHOR_USERNAME   = (1023, 984)  
-ANCHOR_DEFINITION = (276, 1158) # Updated per your request
+ANCHOR_DEFINITION = (276, 1158) 
 ANCHOR_CAT        = (1401, 1023) 
 
 def has_glyph(font_path: Path, glyph: str) -> bool:
+    """Checks if a font file contains the rendering glyph for a specific character."""
     try:
         font = TTFont(str(font_path))
         for table in font['cmap'].tables:
@@ -41,6 +43,7 @@ def has_glyph(font_path: Path, glyph: str) -> bool:
         return False
 
 def draw_mixed_font_text(draw, position, text, primary_font, primary_path, fallback_font, fill):
+    """Draws text character-by-character, swinging to fallback fonts for Unicode styles."""
     x, y = position
     for char in text:
         if has_glyph(primary_path, char) or not FONT_FALLBACK_PATH.exists():
@@ -50,9 +53,14 @@ def draw_mixed_font_text(draw, position, text, primary_font, primary_path, fallb
         draw.text((x, y), char, fill=fill, font=current_font)
         x += draw.textlength(char, font=current_font)
 
-async def generate_card_image(word: str, definition: str, posted_by: str, pose_index: int = 0) -> str:
+async def generate_card_image(word: str, definition: str, posted_by: str, pose_index: int = None) -> str:
+    """Generates a high-resolution dictionary card using custom anchors and random mascot cycling."""
     try:
-        logger.info(f"Compiling card for '{word}'")
+        # Randomize cat if no index provided
+        if pose_index is None:
+            pose_index = random.randint(0, TOTAL_CAT_MASCOTS - 1)
+
+        logger.info(f"Compiling card for '{word}' with cat pose {pose_index}")
         img = Image.open(TEMPLATE_PATH).convert("RGB")
         draw = ImageDraw.Draw(img)
 
@@ -76,9 +84,11 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         draw.text((1024 - (w_w / 2), ANCHOR_WORD[1]), word_text, fill="#ffffff", font=font_title)
 
         # C. Username
-        draw_mixed_font_text(draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill="#ffffff")
+        draw_mixed_font_text(
+            draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill="#ffffff"
+        )
 
-        # D. Definition (Centered within a 600px wide column starting at new anchor)
+        # D. Definition (Centered within a 600px wide column)
         wrapped_def = textwrap.wrap(definition, width=40)
         curr_y = ANCHOR_DEFINITION[1]
         for line in wrapped_def:
@@ -86,17 +96,19 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
             draw.text((ANCHOR_DEFINITION[0] + (300 - (l_w / 2)), curr_y), line, fill="#d1d1d1", font=font_body)
             curr_y += 60
 
-        # E. Mascot
+        # E. Mascot (Scaled and placed at your anchor)
         cat_num = pose_index % TOTAL_CAT_MASCOTS
         cat_path = ASSETS_DIR / f"cat_{cat_num}.png"
         if cat_path.exists():
             cat_mascot = Image.open(cat_path).convert("RGBA")
-            cat_mascot.thumbnail((650, 650))
+            cat_mascot.thumbnail((600, 600))
             img.paste(cat_mascot, ANCHOR_CAT, cat_mascot)
 
+        # Save result
         filename = f"{uuid.uuid4()}.png"
         output_path = GENERATED_DIR / filename
         img.save(output_path, "PNG", quality=100)
+        
         return filename
 
     except Exception as e:
