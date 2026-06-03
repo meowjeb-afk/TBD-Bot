@@ -93,25 +93,4 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         draw.text((intro_x, 335), intro_text, fill="#ffffff", font=font_intro)
         
         # B. Main Featured Word (Centered, giant, wrapped in stylized curly quotes)
-        word_text = f'“{word.upper()}”'
-        word_w = draw.textlength(word_text, font=font_title)
-        word_x = (img.width - word_w) // 2
-        draw.text((word_x, 370), word_text, fill="#ffffff", font=font_title)
-        
-        # C. Username (Left-aligned right after the "Posted by:" visual badge container)
-        draw_mixed_font_text(
-            draw=draw, 
-            position=(505, 592), 
-            text=posted_by, 
-            primary_font=font_meta, 
-            primary_path=FONT_META_PATH, 
-            fallback_font=font_fallback, 
-            fill="#b3a2d6"
-        )
-        
-        # D. Definition Block (Left-aligned below the middle bar, bounded safely)
-        # width=32 keeps description text inside the safe left margin columns
-        lines = textwrap.wrap(definition, width=32)
-        y_offset = 680
-        for line in lines[:4]:
-            # X coordinate 140 lines up vertically
+        word_text = f'“{word.upper()}
