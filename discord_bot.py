@@ -8,23 +8,20 @@ from bson import json_util
 
 logger = logging.getLogger(__name__)
 
-# Define the explicit developer User ID allowed to execute testing wipe operations
-# ⚠️ PASTE YOUR ACTUAL 17-19 DIGIT NUMERICAL DISCORD USER ID HERE!
+# Explicit developer account lock
 DEVELOPER_USER_ID = 552956853147926532 
 
 class TBD_Bot(commands.Bot):
     def __init__(self, db_connection):
-        # Configure default intents (adjust as needed for your specific feature suite)
         intents = discord.Intents.default()
         intents.message_content = True
         
         super().__init__(command_prefix="!", intents=intents)
-        self.db = db_connection  # Save database handle to self for accessibility across commands
+        self.db = db_connection  
 
     async def setup_hook(self):
         """Pre-flight setup hook executing right before internal websocket connection opens."""
         logger.info("Synchronizing application command trees...")
-        # Syncs slash commands globally. Note: Global syncing can take up to an hour to propagate.
         await self.tree.sync()
         logger.info("Application command trees successfully synchronized globally.")
 
@@ -33,7 +30,7 @@ class TBD_Bot(commands.Bot):
         await self.change_presence(activity=discord.Game(name="with the TBD Dictionary!"))
 
 
-# Initialize an internal placeholder so lifespan hooks can track state
+# Initialize active tracking target reference
 active_bot: TBD_Bot = None
 
 
@@ -67,7 +64,6 @@ async def start_bot(token: str, db_connection) -> None:
             await interaction.response.defer(ephemeral=True)
 
             try:
-                # Case-insensitive query targeting the 'cards' collection
                 query = {"word": {"$regex": f"^{target_word}$", "$options": "i"}}
                 result = await active_bot.db.cards.delete_one(query)
                 
@@ -99,11 +95,9 @@ async def start_bot(token: str, db_connection) -> None:
                 await interaction.response.send_message("❌ Database connection offline.", ephemeral=True)
                 return
 
-            # Tells Discord to wait so it never hits the 3-second timeout limit again
             await interaction.response.defer(ephemeral=False)
 
             try:
-                # Sorts alphabetically by the 'word' field
                 cursor = active_bot.db.cards.find().sort("word", 1)
                 documents = await cursor.to_list(length=100)
 
@@ -128,3 +122,55 @@ async def start_bot(token: str, db_connection) -> None:
                 await interaction.followup.send(f"❌ Failed to fetch list: `{str(e)}`")
 
         # ==========================================
+        # COMMAND 3: SLASH COMMAND - /debuglist
+        # ==========================================
+        @active_bot.tree.command(
+            name="debuglist", 
+            description="[TESTING ONLY] Inspect raw database structure."
+        )
+        async def debuglist_command(interaction: discord.Interaction):
+            if interaction.user.id != DEVELOPER_USER_ID:
+                await interaction.response.send_message("❌ **Permission Denied.**", ephemeral=True)
+                return
+
+            if active_bot.db is None:
+                await interaction.response.send_message("❌ **Database Connection Unavailable.**", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)
+
+            try:
+                cursor = active_bot.db.cards.find().sort("_id", -1).limit(1)
+                documents = await cursor.to_list(length=1)
+
+                if not documents:
+                    await interaction.followup.send("⚠️ Database collection is empty or collection name is incorrect.", ephemeral=True)
+                    return
+                
+                raw_dump = json.dumps(documents, default=json_util.default, indent=2)
+                
+                if len(raw_dump) > 1900:
+                    raw_dump = raw_dump[:1900] + "\n...[Truncated]"
+
+                await interaction.followup.send(f"🔍 **Raw Entry Structure:**\n```json\n{raw_dump}\n```", ephemeral=True)
+            except Exception as e:
+                await interaction.followup.send(f"❌ Diagnostic error: `{str(e)}`", ephemeral=True)
+
+        # Connect directly to the discord gateways using the live token context
+        await active_bot.start(token)
+        
+    except discord.errors.LoginFailure:
+        logger.error("❌ Failed to authenticate with Discord. Your DISCORD_TOKEN configuration is invalid.")
+        raise
+    except Exception as e:
+        logger.error(f"Discord core architecture crashed on initialization startup: {e}", exc_info=True)
+        raise e
+
+
+async def stop_bot() -> None:
+    """Safely shuts down the active bot connection instance during backend application lifespans."""
+    global active_bot
+    if active_bot is not None:
+        logger.info("Closing active Discord web gateway structures gracefully...")
+        await active_bot.close()
+        logger.info("Discord engine successfully unmounted and finalized cleanly.")
