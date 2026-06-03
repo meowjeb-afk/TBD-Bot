@@ -14,7 +14,7 @@ GENERATED_DIR = ROOT_DIR / "generated"
 GENERATED_DIR.mkdir(exist_ok=True)
 
 # Total number of unique cat images you have in your assets folder
-TOTAL_CAT_MASCOTS = 16 
+TOTAL_CAT_MASCOTS = 11 
 
 async def generate_card_image(word: str, definition: str, posted_by: str, pose_index: int = 0) -> str:
     """Overlays custom text and cycles transparent cat mascots onto the template."""
