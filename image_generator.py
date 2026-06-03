@@ -26,6 +26,7 @@ FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf"
 TOTAL_CAT_MASCOTS = 11
 
 # Updated Coordinates for 2364x1773
+# These anchors must be calibrated against your clean background template
 ANCHOR_WORD       = (425, 694) 
 ANCHOR_USERNAME   = (1105, 1514)  
 ANCHOR_DEFINITION = (324, 1006) 
@@ -61,7 +62,7 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         if pose_index is None:
             pose_index = random.randint(0, TOTAL_CAT_MASCOTS - 1)
 
-        # 1. Load and Force Resize
+        # Load, convert, and force canvas resize
         img = Image.open(TEMPLATE_PATH).convert("RGB")
         if img.size != TARGET_SIZE:
             img = img.resize(TARGET_SIZE, Image.Resampling.LANCZOS)
@@ -76,24 +77,24 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         except Exception:
             font_title = font_body = font_meta = font_fallback = ImageFont.load_default()
 
-        # 2. Draw Word (Centered horizontally at 1182px)
+        # 1. Draw Word (Centered horizontally at 1182px)
         word_text = f"“{word.upper()}”"
         w_w = draw.textlength(word_text, font=font_title)
         draw.text((1182 - (w_w / 2), ANCHOR_WORD[1]), word_text, fill=PALE_PURPLE, font=font_title)
 
-        # 3. Draw Username
+        # 2. Draw Username (Label is now baked into the template, drawing only the name)
         draw_mixed_font_text(
-            draw, ANCHOR_USERNAME, f"Posted By: {posted_by}", font_meta, FONT_META_PATH, font_fallback, fill=PALE_PURPLE
+            draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill=PALE_PURPLE
         )
 
-        # 4. Draw Definition
+        # 3. Draw Definition
         wrapped_def = textwrap.wrap(definition, width=40)
         curr_y = ANCHOR_DEFINITION[1]
         for line in wrapped_def:
             draw.text((ANCHOR_DEFINITION[0], curr_y), line, fill=PALE_PURPLE, font=font_body)
             curr_y += 60
 
-        # 5. Mascot
+        # 4. Mascot
         cat_num = pose_index % TOTAL_CAT_MASCOTS
         cat_path = ASSETS_DIR / f"cat_{cat_num}.png"
         if cat_path.exists():
