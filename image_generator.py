@@ -24,11 +24,11 @@ FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf"
 TOTAL_CAT_MASCOTS = 18
 
 # Krita-verified Top-Left Anchor Coordinates
-ANCHOR_INTRO      = (699, 540) 
+ANCHOR_INTRO      = (810, 509) 
 ANCHOR_WORD       = (363, 675) 
 ANCHOR_USERNAME   = (1023, 984)  
 ANCHOR_DEFINITION = (276, 1158) # Updated per your request
-ANCHOR_CAT        = (1398, 1125) 
+ANCHOR_CAT        = (1401, 1023) 
 
 def has_glyph(font_path: Path, glyph: str) -> bool:
     try:
