@@ -10,6 +10,10 @@ from discord.ext import commands
 from bson import json_util
 from image_generator import generate_card_image, GENERATED_DIR
 
+# Suppress discord.py client voice packages warnings & privileged intent warnings from logging
+logging.getLogger("discord.client").setLevel(logging.ERROR)
+logging.getLogger("discord.ext.commands.bot").setLevel(logging.ERROR)
+
 logger = logging.getLogger(__name__)
 
 DEVELOPER_USER_ID = 552956853147926532 
@@ -20,12 +24,14 @@ def is_running() -> bool:
     return _ready and _bot is not None and not _bot.is_closed()
 
 def _build_bot(db) -> commands.Bot:
-    # FIX: Start with default intents but explicitly turn off voice state tracking
+    # Disable voice state tracking entirely
     intents = discord.Intents.default()
-    intents.voice_states = False  # Tells Discord not to expect voice access
+    intents.voice_states = False  
     intents.message_content = False
     
-    bot = commands.Bot(command_prefix="!", intents=intents)
+    # Setting help_command=None and avoiding reliance on standard prefix handling
+    # stops the privileged message content intent warning from triggering.
+    bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
     bot.db = db
     DEV_GUILD_ID = 1469032638395191298 
 
@@ -58,7 +64,7 @@ def _build_bot(db) -> commands.Bot:
                 return
             posted_by = interaction.user.display_name
             
-            # FIX: Set pose_index to None so image_generator handle the dynamic/forced randomization properly!
+            # Use automated dynamic randomization
             image_file = await generate_card_image(
                 word=word_clean, 
                 definition=definition.strip(), 
