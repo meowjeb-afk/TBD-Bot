@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from fontTools.ttLib import TTFont
-import httpx  # Ensure 'httpx' is added to your requirements.txt!
+import httpx  # Ensure 'httpx' is in your requirements.txt!
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ async def upload_to_github(local_file_path: Path) -> str | None:
         payload = {
             "message": f"🤖 Bot Auto-Archive: Saved/Updated dictionary card {filename}",
             "content": encoded_content,
-            "branch": "main"  # Swap to "master" if your repository uses master
+            "branch": "main"  
         }
         headers = {
             "Authorization": f"token {token}",
@@ -99,18 +99,13 @@ async def upload_to_github(local_file_path: Path) -> str | None:
         return None
 
 def _sync_draw_card(word: str, definition: str, posted_by: str, pose_index: int, filename: str) -> str:
-    """
-    Pure synchronous canvas operations shifted out of the main execution sequence.
-    This keeps Discord connection lifelines open while drawing large canvas pixels.
-    """
-    # 1. Load, convert to RGB, and force size
+    """Pure synchronous canvas operations shifted out of the main execution thread loop."""
     img = Image.open(TEMPLATE_PATH).convert("RGB")
     if img.size != TARGET_SIZE:
         img = img.resize(TARGET_SIZE, Image.Resampling.LANCZOS)
         
     draw = ImageDraw.Draw(img)
 
-    # 2. Setup Fonts
     try:
         font_title = ImageFont.truetype(str(FONT_TITLE_PATH), 150)
         font_body = ImageFont.truetype(str(FONT_BODY_PATH), 50)
@@ -119,7 +114,7 @@ def _sync_draw_card(word: str, definition: str, posted_by: str, pose_index: int,
     except Exception:
         font_title = font_body = font_meta = font_fallback = ImageFont.load_default()
 
-    # 3. Draw Word with Stroke (Centered at 1182px)
+    # Draw Word with Stroke (Centered at 1182px)
     word_text = f"“{word.upper()}”"
     w_w = draw.textlength(word_text, font=font_title)
     draw.text(
@@ -131,32 +126,32 @@ def _sync_draw_card(word: str, definition: str, posted_by: str, pose_index: int,
         stroke_fill=PALE_PURPLE  
     )
 
-    # 4. Draw Username
+    # Draw Username
     draw_mixed_font_text(
         draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill=PALE_PURPLE
     )
 
-    # 5. Draw Definition
+    # Draw Definition
     wrapped_def = textwrap.wrap(definition, width=40)
     curr_y = ANCHOR_DEFINITION[1]
     for line in wrapped_def:
         draw.text((ANCHOR_DEFINITION[0], curr_y), line, fill=PALE_PURPLE, font=font_body)
         curr_y += 60
 
-    # 6. Mascot
+    # Mascot Layer
     cat_num = pose_index % TOTAL_CAT_MASCOTS
     cat_path = ASSETS_DIR / f"cat_{cat_num}.png"
     if cat_path.exists():
         cat_mascot = Image.open(cat_path).convert("RGBA")
         img.paste(cat_mascot, ANCHOR_CAT, cat_mascot)
 
-    # 7. Fast Save Execution Loop
+    # Optimized Fast Save
     output_path = GENERATED_DIR / filename
     img.save(output_path, "PNG", compress_level=1, optimize=False)
     return filename
 
-async def generate_card_image(word: str, definition: str, posted_by: str, pose_index: int = None) -> str:
-    """Asynchronous wrapper that runs calculations in a separate thread and saves to cloud repositories."""
+async def generate_card_image(word: str, definition: str, posted_by: str, pose_index: int = None) -> tuple[str, str | None]:
+    """Asynchronous wrapper that runs drawing work in a thread and pushes backups to GitHub."""
     try:
         random.seed(time.time())
         if pose_index is None:
@@ -165,13 +160,14 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         filename = f"{uuid.uuid4()}.png"
         output_path = GENERATED_DIR / filename
 
-        # Offload the heavy synchronous PIL rendering to a safe background thread worker
+        # Offload blocking drawing work to thread pool
         await asyncio.to_thread(_sync_draw_card, word, definition, posted_by, pose_index, filename)
         
-        # Fire-and-forget backup straight up to your GitHub directory structure
-        await upload_to_github(output_path)
+        # Trigger GitHub background upload execution
+        github_url = await upload_to_github(output_path)
         
-        return filename
+        # Returns BOTH paths so the bot can stream files locally and save the URL links
+        return filename, github_url
 
     except Exception as e:
         logger.error(f"Image generation core routine failed: {e}", exc_info=True)
