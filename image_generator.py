@@ -1,4 +1,4 @@
-"""Generate TBD dictionary card images."""
+"""Generate TBD dictionary card images by overlaying dynamic text onto a 2364x1773 template."""
 import logging
 import textwrap
 import uuid
@@ -10,12 +10,14 @@ from fontTools.ttLib import TTFont
 
 logger = logging.getLogger(__name__)
 
+# Directory setup
 ROOT_DIR = Path(__file__).parent
 ASSETS_DIR = ROOT_DIR / "assets"
 TEMPLATE_PATH = ASSETS_DIR / "card_template.png"
 GENERATED_DIR = ROOT_DIR / "generated"
 GENERATED_DIR.mkdir(exist_ok=True)
 
+# Font Setup
 FONT_TITLE_PATH = ASSETS_DIR / "title_font.ttf"
 FONT_BODY_PATH = ASSETS_DIR / "body_font.ttf"
 FONT_META_PATH = ASSETS_DIR / "meta_font.ttf"
@@ -23,14 +25,15 @@ FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf"
 
 TOTAL_CAT_MASCOTS = 11
 
-# Updated Coordinates
+# Updated Coordinates for 2364x1773
 ANCHOR_WORD       = (425, 694) 
 ANCHOR_USERNAME   = (1105, 1514)  
 ANCHOR_DEFINITION = (324, 1006) 
 ANCHOR_CAT        = (1371, 741)
 
-# Pale Purple Hex
+# Design Constants
 PALE_PURPLE = "#DCD0FF"
+TARGET_SIZE = (2364, 1773)
 
 def has_glyph(font_path: Path, glyph: str) -> bool:
     try:
@@ -58,7 +61,11 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         if pose_index is None:
             pose_index = random.randint(0, TOTAL_CAT_MASCOTS - 1)
 
+        # 1. Load and Force Resize
         img = Image.open(TEMPLATE_PATH).convert("RGB")
+        if img.size != TARGET_SIZE:
+            img = img.resize(TARGET_SIZE, Image.Resampling.LANCZOS)
+            
         draw = ImageDraw.Draw(img)
 
         try:
@@ -69,24 +76,24 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         except Exception:
             font_title = font_body = font_meta = font_fallback = ImageFont.load_default()
 
-        # Word - Centered at 1182px
+        # 2. Draw Word (Centered horizontally at 1182px)
         word_text = f"“{word.upper()}”"
         w_w = draw.textlength(word_text, font=font_title)
         draw.text((1182 - (w_w / 2), ANCHOR_WORD[1]), word_text, fill=PALE_PURPLE, font=font_title)
 
-        # Username - Force color here
+        # 3. Draw Username
         draw_mixed_font_text(
             draw, ANCHOR_USERNAME, f"Posted By: {posted_by}", font_meta, FONT_META_PATH, font_fallback, fill=PALE_PURPLE
         )
 
-        # Definition - Left-aligned
+        # 4. Draw Definition
         wrapped_def = textwrap.wrap(definition, width=40)
         curr_y = ANCHOR_DEFINITION[1]
         for line in wrapped_def:
             draw.text((ANCHOR_DEFINITION[0], curr_y), line, fill=PALE_PURPLE, font=font_body)
             curr_y += 60
 
-        # Mascot
+        # 5. Mascot
         cat_num = pose_index % TOTAL_CAT_MASCOTS
         cat_path = ASSETS_DIR / f"cat_{cat_num}.png"
         if cat_path.exists():
@@ -96,6 +103,7 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         filename = f"{uuid.uuid4()}.png"
         output_path = GENERATED_DIR / filename
         img.save(output_path, "PNG", optimize=True)
+        
         return filename
 
     except Exception as e:
