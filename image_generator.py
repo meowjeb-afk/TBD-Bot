@@ -17,6 +17,9 @@ FONT_TITLE_PATH = ASSETS_DIR / "title_font.ttf"
 FONT_BODY_PATH = ASSETS_DIR / "body_font.ttf"
 FONT_META_PATH = ASSETS_DIR / "meta_font.ttf"
 
+# Robust fallback font for crazy unicode characters/symbols (e.g., Google Noto Sans)
+FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf"
+
 # Total number of unique cat images you have in your assets folder
 TOTAL_CAT_MASCOTS = 16 
 
