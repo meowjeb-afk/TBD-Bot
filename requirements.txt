@@ -27,3 +27,4 @@ certifi>=2024.2.2
 # Bot and Image dependencies
 discord.py==2.7.1
 Pillow>=10.2.0
+fonttools
