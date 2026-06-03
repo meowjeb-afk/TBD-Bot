@@ -1,111 +1,260 @@
-"""Generate TBD dictionary card images by overlaying dynamic text and cycling mascot assets onto a template."""
+"""Discord bot for TBD Dictionary. Runs as background task inside FastAPI."""
+import io
+import json
 import logging
-import textwrap
 import uuid
-import random
-import time
-from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
-from fontTools.ttLib import TTFont
+from datetime import datetime, timezone
+
+import discord
+from discord import app_commands
+from discord.ext import commands
+from bson import json_util
+
+from image_generator import generate_card_image, GENERATED_DIR
 
 logger = logging.getLogger(__name__)
 
-# Directory setup
-ROOT_DIR = Path(__file__).parent
-ASSETS_DIR = ROOT_DIR / "assets"
-TEMPLATE_PATH = ASSETS_DIR / "card_template.png"
-GENERATED_DIR = ROOT_DIR / "generated"
-GENERATED_DIR.mkdir(exist_ok=True)
+# Explicit developer security account check
+DEVELOPER_USER_ID = 1504636196096184471 
 
-# Font Setup
-FONT_TITLE_PATH = ASSETS_DIR / "title_font.ttf"
-FONT_BODY_PATH = ASSETS_DIR / "body_font.ttf"
-FONT_META_PATH = ASSETS_DIR / "meta_font.ttf"
-FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf"
+_bot: commands.Bot | None = None
+_ready = False
 
-TOTAL_CAT_MASCOTS = 11
+def is_running() -> bool:
+    return _ready and _bot is not None and not _bot.is_closed()
 
-# Krita-verified Top-Left Anchor Coordinates
-ANCHOR_INTRO      = (698, 606) 
-ANCHOR_WORD       = (363, 675) 
-ANCHOR_USERNAME   = (1023, 984)  
-ANCHOR_DEFINITION = (184, 1165) 
-ANCHOR_CAT        = (1266, 906) 
+def _build_bot(db) -> commands.Bot:
+    """Builds the bot and attaches the database handle directly to it."""
+    intents = discord.Intents.default()
+    intents.message_content = False
+    bot = commands.Bot(command_prefix="!", intents=intents)
 
-def has_glyph(font_path: Path, glyph: str) -> bool:
-    """Checks if a font file contains the rendering glyph for a specific character."""
-    try:
-        font = TTFont(str(font_path))
-        for table in font['cmap'].tables:
-            if ord(glyph) in table.cmap:
-                return True
-        return False
-    except Exception:
-        return False
+    # Attach the cloud database handle directly to the bot object
+    bot.db = db
 
-def draw_mixed_font_text(draw, position, text, primary_font, primary_path, fallback_font, fill):
-    """Draws text character-by-character, swinging to fallback fonts for Unicode styles."""
-    x, y = position
-    for char in text:
-        if has_glyph(primary_path, char) or not FONT_FALLBACK_PATH.exists():
-            current_font = primary_font
-        else:
-            current_font = fallback_font
-        draw.text((x, y), char, fill=fill, font=current_font)
-        x += draw.textlength(char, font=current_font)
+    # === UPDATE THIS WITH YOUR ACTUAL DISCORD SERVER ID ===
+    DEV_GUILD_ID = 1469032638395191298 
+    # ======================================================
 
-async def generate_card_image(word: str, definition: str, posted_by: str, pose_index: int = None) -> str:
-    """Generates a high-resolution dictionary card using custom anchors and forced random cat selection."""
-    try:
-        # Force a new seed and pick a random index if none is provided
-        random.seed(time.time())
-        if pose_index is None:
-            pose_index = random.randint(0, TOTAL_CAT_MASCOTS - 1)
+    @bot.event
+    async def setup_hook():
+        try:
+            guild = discord.Object(id=DEV_GUILD_ID)
+            
+            # Sync exclusively to your private developer guild for instant updates
+            bot.tree.copy_global_to(guild=guild)
+            synced = await bot.tree.sync(guild=guild)
+            
+            logger.info(f"Instant Guild Sync Complete! Synced {len(synced)} commands.")
+        except Exception as e:
+            logger.exception(f"Failed to sync slash commands: {e}")
 
-        logger.info(f"Compiling card for '{word}' with cat pose {pose_index}")
-        img = Image.open(TEMPLATE_PATH).convert("RGB")
-        draw = ImageDraw.Draw(img)
+    @bot.event
+    async def on_ready():
+        global _ready
+        _ready = True
+        logger.info(f"Discord bot ready as {bot.user}")
+
+    # ==========================================
+    # COMMAND 1: SLASH COMMAND - /add
+    # ==========================================
+    @bot.tree.command(name="add", description="Add a word to the TBD dictionary")
+    async def add_cmd(interaction: discord.Interaction, word: str, definition: str):
+        await interaction.response.defer(thinking=True)
+        
+        try:
+            db = bot.db
+            word_clean = word.strip()
+            word_lower = word_clean.lower()
+            
+            logger.info(f"DEBUG: Starting add process for {word_lower}")
+
+            existing = await db.words.find_one({"word_lower": word_lower})
+            if existing:
+                await interaction.followup.send(f"`{word_clean}` is already in the dictionary.")
+                return
+
+            posted_by = interaction.user.display_name
+            count = await db.words.count_documents({})
+            pose_index = count % 6
+
+            logger.info("DEBUG: Calling generate_card_image")
+            image_file = await generate_card_image(
+                word=word_clean, definition=definition.strip(),
+                posted_by=posted_by, pose_index=pose_index,
+            )
+
+            doc = {
+                "id": str(uuid.uuid4()),
+                "word": word_clean,
+                "word_lower": word_lower,
+                "definition": definition.strip(),
+                "posted_by": posted_by,
+                "discord_user_id": str(interaction.user.id),
+                "image_file": image_file,
+                "upvotes": 0,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.words.insert_one(doc)
+
+            path = GENERATED_DIR / image_file
+            with open(path, "rb") as f:
+                data = f.read()
+            file = discord.File(io.BytesIO(data), filename=f"{word_lower}.png")
+            await interaction.followup.send(
+                content=f"**{word_clean}** added to the dictionary!",
+                file=file,
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ COMMAND ERROR: {e}", exc_info=True)
+            await interaction.followup.send(f"An error occurred: {e}")
+
+    # ==========================================
+    # COMMAND 2: SLASH COMMAND - /lookup
+    # ==========================================
+    @bot.tree.command(name="lookup", description="Look up a word")
+    async def lookup_cmd(interaction: discord.Interaction, word: str):
+        await interaction.response.defer(thinking=True)
+        try:
+            db = bot.db
+            doc = await db.words.find_one({"word_lower": word.strip().lower()})
+            if not doc:
+                await interaction.followup.send(f"`{word}` not found.")
+                return
+            
+            path = GENERATED_DIR / doc["image_file"] if doc.get("image_file") else None
+            if path and path.exists():
+                with open(path, "rb") as f:
+                    data = f.read()
+                file = discord.File(io.BytesIO(data), filename=f"{doc['word_lower']}.png")
+                await interaction.followup.send(content=f"**{doc['word']}**", file=file)
+            else:
+                await interaction.followup.send(f"**{doc['word']}** — {doc['definition']}")
+        except Exception as e:
+            logger.error(f"❌ LOOKUP ERROR: {e}", exc_info=True)
+            await interaction.followup.send("Error looking up word.")
+
+    # ==========================================
+    # COMMAND 3: SLASH COMMAND - /list
+    # ==========================================
+    @bot.tree.command(name="list", description="List all words in the TBD dictionary")
+    async def list_cmd(interaction: discord.Interaction):
+        await interaction.response.defer(thinking=True)
+        try:
+            db = bot.db
+            cursor = db.words.find({}, {"word": 1}).sort("word", 1)
+            words_list = [doc["word"] for doc in await cursor.to_list(length=100)]
+            
+            if not words_list:
+                await interaction.followup.send("The dictionary is currently empty.")
+                return
+                
+            formatted_list = ", ".join(f"`{w}`" for w in words_list)
+            
+            if len(formatted_list) > 1900:
+                formatted_list = formatted_list[:1850] + "... and more!"
+
+            await interaction.followup.send(f"📚 **Dictionary Words:**\n{formatted_list}")
+        except Exception as e:
+            logger.error(f"❌ LIST ERROR: {e}", exc_info=True)
+            await interaction.followup.send("Error retrieving words list.")
+
+    # ==========================================
+    # COMMAND 4: SLASH COMMAND - /deleteword
+    # ==========================================
+    @bot.tree.command(
+        name="deleteword", 
+        description="[TESTING ONLY] Force delete a word entry from the database."
+    )
+    @app_commands.describe(word="The exact dictionary word entry you wish to wipe out.")
+    async def deleteword_command(interaction: discord.Interaction, word: str):
+        if interaction.user.id != DEVELOPER_USER_ID:
+            await interaction.response.send_message(
+                "❌ **Permission Denied:** This destructive action is locked exclusively to developers during testing.",
+                ephemeral=True
+            )
+            return
+
+        if bot.db is None:
+            await interaction.response.send_message("❌ **Database Offline:** The bot lost its active link connection.", ephemeral=True)
+            return
+
+        target_word = word.strip()
+        await interaction.response.defer(ephemeral=True)
 
         try:
-            font_title = ImageFont.truetype(str(FONT_TITLE_PATH), 150)
-            font_body = ImageFont.truetype(str(FONT_BODY_PATH), 50)
-            font_meta = ImageFont.truetype(str(FONT_META_PATH), 40)
-            font_intro = ImageFont.truetype(str(FONT_BODY_PATH), 30)
-            font_fallback = ImageFont.truetype(str(FONT_FALLBACK_PATH), 40)
+            # Fixed target tracking field matching against case-insensitive text paths
+            query = {"word": {"$regex": f"^{target_word}$", "$options": "i"}}
+            result = await bot.db.words.delete_one(query)
+            
+            if result.deleted_count > 0:
+                await interaction.followup.send(
+                    f"🗑️ **Testing Purge Successful:**\n"
+                    f"The word entry matching `“{target_word}”` was vaporized from the collection.",
+                    ephemeral=True
+                )
+                logger.info(f"Developer {interaction.user} forcefully dropped word '{target_word}' via slash route.")
+            else:
+                await interaction.followup.send(
+                    f"❓ **Wipe Missed:** Could not find an entry matching `“{target_word}”` inside the database. Run `/debuglist` to audit keys.",
+                    ephemeral=True
+                )
+        except Exception as mongo_error:
+            logger.error(f"MongoDB pipeline broke during testing wipe: {mongo_error}")
+            await interaction.followup.send(f"❌ **Database Error:** `{str(mongo_error)}`", ephemeral=True)
+
+    # ==========================================
+    # COMMAND 5: SLASH COMMAND - /debuglist
+    # ==========================================
+    @bot.tree.command(
+        name="debuglist", 
+        description="[TESTING ONLY] Inspect raw database structure."
+    )
+    async def debuglist_command(interaction: discord.Interaction):
+        if interaction.user.id != DEVELOPER_USER_ID:
+            await interaction.response.send_message("❌ **Permission Denied.**", ephemeral=True)
+            return
+
+        if bot.db is None:
+            await interaction.response.send_message("❌ **Database Connection Unavailable.**", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            cursor = bot.db.words.find().sort("_id", -1).limit(1)
+            documents = await cursor.to_list(length=1)
+
+            if not documents:
+                await interaction.followup.send("⚠️ Database collection is empty or collection name is incorrect.", ephemeral=True)
+                return
+            
+            raw_dump = json.dumps(documents, default=json_util.default, indent=2)
+            
+            if len(raw_dump) > 1900:
+                raw_dump = raw_dump[:1900] + "\n...[Truncated]"
+
+            await interaction.followup.send(f"🔍 **Raw Entry Structure:**\n```json\n{raw_dump}\n```", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Diagnostic error: `{str(e)}`", ephemeral=True)
+
+    return bot
+
+async def start_bot(token: str, db):
+    """Start the Discord bot."""
+    global _bot
+    _bot = _build_bot(db)
+    try:
+        await _bot.start(token)
+    except Exception as e:
+        logger.exception(f"Discord bot crashed: {e}")
+
+async def stop_bot():
+    global _bot, _ready
+    _ready = False
+    if _bot and not _bot.is_closed():
+        try:
+            await _bot.close()
         except Exception:
-            font_title = font_body = font_meta = font_intro = font_fallback = ImageFont.load_default()
-
-        # A. Intro (Centered at 1024px) - Pale Purple
-        intro_text = "today's word entry is..."
-        i_w = draw.textlength(intro_text, font=font_intro)
-        draw.text((1024 - (i_w / 2), ANCHOR_INTRO[1]), intro_text, fill="#DCD0FF", font=font_intro)
-
-        # B. Main Word (Centered at 1024px) - Pale Purple
-        word_text = f"“{word.upper()}”"
-        w_w = draw.textlength(word_text, font=font_title)
-        draw.text((1024 - (w_w / 2), ANCHOR_WORD[1]), word_text, fill="#DCD0FF", font=font_title)
-
-        # C. Username - Pale Purple
-        draw_mixed_font_text(
-            draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill="#DCD0FF"
-        )
-
-        # D. Definition (Left-aligned) - Pale Purple
-        wrapped_def = textwrap.wrap(definition, width=40)
-        curr_y = ANCHOR_DEFINITION[1]
-        for line in wrapped_def:
-            draw.text((ANCHOR_DEFINITION[0], curr_y), line, fill="#DCD0FF", font=font_body)
-            curr_y += 60
-
-        # E. Mascot (Pre-sized 1000x1000 assets)
-        cat_num = pose_index % TOTAL_CAT_MASCOTS
-        cat_path = ASSETS_DIR / f"cat_{cat_num}.png"
-        if cat_path.exists():
-            cat_mascot = Image.open(cat_path).convert("RGBA")
-            # Assets are already standardized; direct paste
-            img.paste(cat_mascot, ANCHOR_CAT, cat_mascot)
-
-        # Save result
-        filename = f"{uuid.uuid4()}.png"
-        output_path = GENERATED_DIR / filename
-        img.save(output_path, "PNG", quality=10
+            pass
