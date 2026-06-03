@@ -19,7 +19,7 @@ FONT_BODY_PATH = ASSETS_DIR / "body_font.ttf"
 FONT_META_PATH = ASSETS_DIR / "meta_font.ttf"
 FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf" 
 
-TOTAL_CAT_MASCOTS = 16 
+TOTAL_CAT_MASCOTS = 18 
 
 def has_glyph(font_path: Path, glyph: str) -> bool:
     """Checks if a font file contains the rendering glyph for a specific character."""
