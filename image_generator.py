@@ -105,10 +105,10 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
             # Assets are already standardized; direct paste
             img.paste(cat_mascot, ANCHOR_CAT, cat_mascot)
 
-        # Save result
+        # Save result (PNG uses optimize=True instead of quality parameter)
         filename = f"{uuid.uuid4()}.png"
         output_path = GENERATED_DIR / filename
-        img.save(output_path, "PNG", quality=100)
+        img.save(output_path, "PNG", optimize=True)
         
         return filename
 
