@@ -108,4 +108,10 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         # Save result
         filename = f"{uuid.uuid4()}.png"
         output_path = GENERATED_DIR / filename
-        img.save(output_path, "PNG", quality=10
+        img.save(output_path, "PNG", quality=10)
+
+        return filename
+
+    except Exception as e:
+        logger.error(f"Image generation failed: {e}", exc_info=True)
+        raise e
