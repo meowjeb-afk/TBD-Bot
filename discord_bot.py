@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 # Define the explicit developer User ID allowed to execute testing wipe operations
 # ⚠️ PASTE YOUR ACTUAL 17-19 DIGIT NUMERICAL DISCORD USER ID HERE!
-DEVELOPER_USER_ID = 123456789012345678 
+DEVELOPER_USER_ID = 552956853147926532 
 
 class TBD_Bot(commands.Bot):
     def __init__(self, db_connection):
