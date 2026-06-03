@@ -23,14 +23,15 @@ FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf"
 
 TOTAL_CAT_MASCOTS = 18
 
-# Anchor Coordinates for 2048x1676 Template
-ANCHOR_INTRO      = (1024, 300) 
-ANCHOR_WORD       = (1024, 450) 
-ANCHOR_USERNAME   = (650, 600)  
-ANCHOR_DEFINITION = (120, 750)  
-ANCHOR_CAT        = (1450, 750) 
+# Precise Placement Anchors (Top-Left Corner)
+ANCHOR_INTRO      = (699, 540) 
+ANCHOR_WORD       = (363, 675) 
+ANCHOR_USERNAME   = (1023, 984)  
+ANCHOR_DEFINITION = (171, 1212)  
+ANCHOR_CAT        = (1386, 1116) 
 
 def has_glyph(font_path: Path, glyph: str) -> bool:
+    """Checks if a font file contains the rendering glyph for a specific character."""
     try:
         font = TTFont(str(font_path))
         for table in font['cmap'].tables:
@@ -41,6 +42,7 @@ def has_glyph(font_path: Path, glyph: str) -> bool:
         return False
 
 def draw_mixed_font_text(draw, position, text, primary_font, primary_path, fallback_font, fill):
+    """Draws text character-by-character, swinging to fallback fonts for Unicode styles."""
     x, y = position
     for char in text:
         if has_glyph(primary_path, char) or not FONT_FALLBACK_PATH.exists():
@@ -51,12 +53,13 @@ def draw_mixed_font_text(draw, position, text, primary_font, primary_path, fallb
         x += draw.textlength(char, font=current_font)
 
 async def generate_card_image(word: str, definition: str, posted_by: str, pose_index: int = 0) -> str:
+    """Generates a high-resolution dictionary card using Krita-defined anchors."""
     try:
         logger.info(f"Compiling card for '{word}'")
         img = Image.open(TEMPLATE_PATH).convert("RGB")
         draw = ImageDraw.Draw(img)
 
-        # Scaled font sizes for high-res 2048px canvas
+        # Scaled font sizes for 2048px canvas
         try:
             font_title = ImageFont.truetype(str(FONT_TITLE_PATH), 120)
             font_body = ImageFont.truetype(str(FONT_BODY_PATH), 50)
@@ -66,18 +69,17 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         except Exception:
             font_title = font_body = font_meta = font_intro = font_fallback = ImageFont.load_default()
 
-        # A. Intro (Centered)
-        intro_text = "today's word entry is..."
-        i_w = draw.textlength(intro_text, font=font_intro)
-        draw.text((ANCHOR_INTRO[0] - (i_w / 2), ANCHOR_INTRO[1]), intro_text, fill="#ffffff", font=font_intro)
+        # A. Intro sub-header
+        draw.text(ANCHOR_INTRO, "today's word entry is...", fill="#ffffff", font=font_intro)
 
-        # B. Main Word (Centered)
+        # B. Main Featured Word
         word_text = f"“{word.upper()}”"
-        w_w = draw.textlength(word_text, font=font_title)
-        draw.text((ANCHOR_WORD[0] - (w_w / 2), ANCHOR_WORD[1]), word_text, fill="#ffffff", font=font_title)
+        draw.text(ANCHOR_WORD, word_text, fill="#ffffff", font=font_title)
 
-        # C. Username (Clean, aligned to button)
-        draw_mixed_font_text(draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill="#ffffff")
+        # C. Username (Unicode-aware, aligned to button)
+        draw_mixed_font_text(
+            draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill="#ffffff"
+        )
 
         # D. Definition (Wrapped)
         wrapped_def = textwrap.wrap(definition, width=40)
@@ -86,7 +88,7 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
             draw.text((ANCHOR_DEFINITION[0], curr_y), line, fill="#d1d1d1", font=font_body)
             curr_y += 60
 
-        # E. Mascot (Resized for high-res)
+        # E. Mascot
         cat_num = pose_index % TOTAL_CAT_MASCOTS
         cat_path = ASSETS_DIR / f"cat_{cat_num}.png"
         if cat_path.exists():
@@ -94,6 +96,7 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
             cat_mascot.thumbnail((400, 400))
             img.paste(cat_mascot, ANCHOR_CAT, cat_mascot)
 
+        # Save result
         filename = f"{uuid.uuid4()}.png"
         output_path = GENERATED_DIR / filename
         img.save(output_path, "PNG", quality=100)
