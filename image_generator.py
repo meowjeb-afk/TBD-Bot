@@ -26,9 +26,9 @@ FONT_FALLBACK_PATH = ASSETS_DIR / "notosans_fallback.ttf"
 TOTAL_CAT_MASCOTS = 11
 
 # Updated Coordinates for 2364x1773
-ANCHOR_WORD       = (425, 694) 
+ANCHOR_WORD       = (522, 726) 
 ANCHOR_USERNAME   = (1105, 1514)  
-ANCHOR_DEFINITION = (324, 1006) 
+ANCHOR_DEFINITION = (288, 1128) 
 ANCHOR_CAT        = (1371, 741)
 
 # Design Constants
