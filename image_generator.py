@@ -75,26 +75,26 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         except Exception:
             font_title = font_body = font_meta = font_intro = font_fallback = ImageFont.load_default()
 
-        # A. Intro (Centered at 1024px)
+        # A. Intro (Centered at 1024px) - Pale Purple
         intro_text = "today's word entry is..."
         i_w = draw.textlength(intro_text, font=font_intro)
-        draw.text((1024 - (i_w / 2), ANCHOR_INTRO[1]), intro_text, fill="#ffffff", font=font_intro)
+        draw.text((1024 - (i_w / 2), ANCHOR_INTRO[1]), intro_text, fill="#DCD0FF", font=font_intro)
 
-        # B. Main Word (Centered at 1024px)
+        # B. Main Word (Centered at 1024px) - Pale Purple
         word_text = f"“{word.upper()}”"
         w_w = draw.textlength(word_text, font=font_title)
-        draw.text((1024 - (w_w / 2), ANCHOR_WORD[1]), word_text, fill="#ffffff", font=font_title)
+        draw.text((1024 - (w_w / 2), ANCHOR_WORD[1]), word_text, fill="#DCD0FF", font=font_title)
 
-        # C. Username
+        # C. Username - Pale Purple
         draw_mixed_font_text(
-            draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill="#ffffff"
+            draw, ANCHOR_USERNAME, posted_by, font_meta, FONT_META_PATH, font_fallback, fill="#DCD0FF"
         )
 
-        # D. Definition (Left-aligned)
+        # D. Definition (Left-aligned) - Pale Purple
         wrapped_def = textwrap.wrap(definition, width=40)
         curr_y = ANCHOR_DEFINITION[1]
         for line in wrapped_def:
-            draw.text((ANCHOR_DEFINITION[0], curr_y), line, fill="#d1d1d1", font=font_body)
+            draw.text((ANCHOR_DEFINITION[0], curr_y), line, fill="#DCD0FF", font=font_body)
             curr_y += 60
 
         # E. Mascot (Pre-sized 1000x1000 assets)
@@ -108,10 +108,4 @@ async def generate_card_image(word: str, definition: str, posted_by: str, pose_i
         # Save result
         filename = f"{uuid.uuid4()}.png"
         output_path = GENERATED_DIR / filename
-        img.save(output_path, "PNG", quality=100)
-        
-        return filename
-
-    except Exception as e:
-        logger.error(f"Image generation failed: {e}", exc_info=True)
-        raise e
+        img.save(output_path, "PNG", quality=10
