@@ -7,8 +7,8 @@ from discord.ext import commands
 logger = logging.getLogger(__name__)
 
 # Define the explicit developer User ID allowed to execute testing wipe operations
-# ⚠️ REPLACE THIS with your actual 17-19 digit numerical Discord User ID!
-DEVELOPER_USER_ID = 123456789012345678 
+# ⚠️ PASTE YOUR ACTUAL 17-19 DIGIT NUMERICAL DISCORD USER ID HERE!
+DEVELOPER_USER_ID = 552956853147926532 
 
 class TBD_Bot(commands.Bot):
     def __init__(self, db_connection):
@@ -61,7 +61,7 @@ async def start_bot(token: str, db_connection) -> None:
 
             if active_bot.db is None:
                 await interaction.response.send_message(
-                    "❌ **Database Offline:** The bot lost its active link connection to MongoDB Altas.",
+                    "❌ **Database Offline:** The bot lost its active link connection to MongoDB Atlas.",
                     ephemeral=True
                 )
                 return
