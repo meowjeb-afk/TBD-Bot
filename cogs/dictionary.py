@@ -4,47 +4,39 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 import discord
 from discord import app_commands
 from discord.ext import commands
 from bson import json_util
 
-# Share the same image generator engine across files
 from image_generator import generate_card_image, GENERATED_DIR
+from cogs.karma import award_catnip
 
 logger = logging.getLogger(__name__)
 DEVELOPER_USER_ID = 552956853147926532
 
 
 async def word_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
-    """Dynamically queries MongoDB to offer instant drop-down suggestions as the user types."""
     try:
-        # Pull the database connection out of the cog's bot client references
         db = interaction.client.db if hasattr(interaction.client, "db") else None
         if not db:
             return []
-            
         if not current:
-            # If nothing typed yet, return the 25 most recent additions as a helpful shortcut
             cursor = db.words.find({}, {"word": 1}).sort("_id", -1).limit(25)
             return [app_commands.Choice(name=doc["word"], value=doc["word"]) for doc in await cursor.to_list(length=25)]
 
-        # Case-insensitive prefix match against active database records
         cursor = db.words.find({"word_lower": {"$regex": f"^{current.lower()}"}}, {"word": 1}).limit(25)
         return [app_commands.Choice(name=doc["word"], value=doc["word"]) for doc in await cursor.to_list(length=25)]
     except Exception as e:
-        logger.error(f"Autocomplete engine error: {e}")
+        logger.error(f"Autocomplete error: {e}")
         return []
 
 
 class CardInteractionView(discord.ui.View):
-    """Adds persistent clickable Uppies and Share buttons underneath card layouts."""
     def __init__(self, bot: commands.Bot, word_lower: str, initial_upvotes: int = 0):
         super().__init__(timeout=None)
         self.bot = bot
         self.word_lower = word_lower
-        
         if initial_upvotes > 0:
             self.uppies_button.label = f"Uppies ({initial_upvotes})"
 
@@ -61,6 +53,12 @@ class CardInteractionView(discord.ui.View):
             if result:
                 new_total = result.get("upvotes", 0)
                 button.label = f"Uppies ({new_total})"
+                
+                # Award Catnip to the creator of the word when someone else upvotes it (+2 Catnip)
+                word_creator_id = result.get("discord_user_id")
+                if word_creator_id:
+                    await award_catnip(db, word_creator_id, result.get("posted_by", "User"), 2)
+                
                 await interaction.message.edit(view=self)
                 await interaction.followup.send(f"✨ You gave Uppies to **{result['word']}**! Total: {new_total}", ephemeral=True)
             else:
@@ -78,10 +76,7 @@ class CardInteractionView(discord.ui.View):
             if doc and doc.get("github_url"):
                 await interaction.followup.send(f"📥 Permanent asset link:\n`{doc['github_url']}`", ephemeral=True)
             elif doc:
-                await interaction.followup.send(
-                    f"📢 **{doc['word']}**:\n_{doc['definition']}_\n\n*(To share the card outside Discord, right-click the file or save the image!)*", 
-                    ephemeral=True
-                )
+                await interaction.followup.send(f"📢 **{doc['word']}**:\n_{doc['definition']}_", ephemeral=True)
             else:
                 await interaction.followup.send("Word schema data missing.", ephemeral=True)
         except Exception as e:
@@ -90,7 +85,6 @@ class CardInteractionView(discord.ui.View):
 
 
 class DictionaryCog(commands.Cog):
-    """Encapsulates all dictionary interactions and processes requests."""
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
@@ -108,25 +102,19 @@ class DictionaryCog(commands.Cog):
                 
             posted_by = interaction.user.display_name
             image_file, github_url = await generate_card_image(
-                word=word_clean, 
-                definition=definition.strip(), 
-                posted_by=posted_by, 
-                pose_index=None
+                word=word_clean, definition=definition.strip(), posted_by=posted_by, pose_index=None
             )
             
             doc = {
-                "id": str(uuid.uuid4()), 
-                "word": word_clean, 
-                "word_lower": word_lower, 
-                "definition": definition.strip(), 
-                "posted_by": posted_by, 
-                "discord_user_id": str(interaction.user.id), 
-                "image_file": image_file, 
-                "github_url": github_url,
-                "upvotes": 0, 
-                "created_at": datetime.now(timezone.utc).isoformat()
+                "id": str(uuid.uuid4()), "word": word_clean, "word_lower": word_lower, 
+                "definition": definition.strip(), "posted_by": posted_by, 
+                "discord_user_id": str(interaction.user.id), "image_file": image_file, 
+                "github_url": github_url, "upvotes": 0, "created_at": datetime.now(timezone.utc).isoformat()
             }
             await db.words.insert_one(doc)
+            
+            # Award +15 Catnip leaves for enriching the server lexicon
+            new_stash = await award_catnip(db, interaction.user.id, interaction.user.display_name, 15)
             
             path = GENERATED_DIR / image_file
             with open(path, "rb") as f:
@@ -134,7 +122,10 @@ class DictionaryCog(commands.Cog):
             file = discord.File(io.BytesIO(data), filename=f"{word_lower}.png")
             
             view = CardInteractionView(self.bot, word_lower, initial_upvotes=0)
-            await interaction.followup.send(content=f"**{word_clean}** added!", file=file, view=view)
+            await interaction.followup.send(
+                content=f"**{word_clean}** added! 🌿 *You hoarded 15 leaves of Catnip! (Total Stash: {new_stash})*", 
+                file=file, view=view
+            )
         except Exception as e:
             logger.error(f"❌ COMMAND ERROR: {e}", exc_info=True)
             await interaction.followup.send(f"An error occurred: {e}")
@@ -157,17 +148,14 @@ class DictionaryCog(commands.Cog):
             is_admin = interaction.user.guild_permissions.administrator if interaction.guild else False
             
             if not (is_author or is_admin):
-                await interaction.followup.send("⛔ Permission Denied. Only the original creator or a server administrator can modify this entry.")
+                await interaction.followup.send("⛔ Permission Denied. Only the original creator or an admin can modify this entry.")
                 return
 
             posted_by = doc.get("posted_by", interaction.user.display_name)
             pose_index = len(doc.get("id", "1"))
             
             new_image_file, new_github_url = await generate_card_image(
-                word=doc["word"], 
-                definition=new_definition.strip(), 
-                posted_by=posted_by, 
-                pose_index=pose_index
+                word=doc["word"], definition=new_definition.strip(), posted_by=posted_by, pose_index=pose_index
             )
             
             await db.words.update_one(
@@ -188,10 +176,10 @@ class DictionaryCog(commands.Cog):
             file = discord.File(io.BytesIO(data), filename=f"{word_lower}_edited.png")
             
             view = CardInteractionView(self.bot, word_lower, initial_upvotes=doc.get("upvotes", 0))
-            await interaction.followup.send(content=f"📝 **{doc['word']}** entry modified!", file=file, view=view)
+            await interaction.followup.send(content=f"📝 **{doc['word']}** entry details modified!", file=file, view=view)
         except Exception as e:
             logger.error(f"❌ EDIT ROUTINE ERROR: {e}", exc_info=True)
-            await interaction.followup.send(f"An error occurred while altering entry data: {e}")
+            await interaction.followup.send(f"An error occurred: {e}")
 
     @app_commands.command(name="lookup", description="Look up a word")
     @app_commands.autocomplete(word=word_autocomplete)
@@ -260,5 +248,4 @@ class DictionaryCog(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
-    """This structural endpoint allows the main loader configuration to pick up this Cog."""
     await bot.add_cog(DictionaryCog(bot))
