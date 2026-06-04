@@ -1,75 +1,68 @@
-"""Discord bot for TBD Dictionary. Runs as background task inside FastAPI."""
-import io
-import json
+"""Central application bootloader context for loading separate modular cogs."""
 import logging
-import uuid
-from datetime import datetime, timezone
 import discord
-from discord import app_commands
 from discord.ext import commands
-from bson import json_util
-from image_generator import generate_card_image, GENERATED_DIR
 
-# Aggressively silence all core discord startup warnings (voice/privileged intents)
+# Silencing core startup warnings
 logging.getLogger("discord").setLevel(logging.ERROR)
 logging.getLogger("discord.client").setLevel(logging.ERROR)
 logging.getLogger("discord.ext.commands.bot").setLevel(logging.ERROR)
 
 logger = logging.getLogger(__name__)
 
-DEVELOPER_USER_ID = 552956853147926532 
 _bot: commands.Bot | None = None
 _ready = False
 
 def is_running() -> bool:
     return _ready and _bot is not None and not _bot.is_closed()
 
+def _build_bot(db) -> commands.Bot:
+    intents = discord.Intents.default()
+    intents.voice_states = False  
+    intents.message_content = False
+    
+    bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
+    bot.db = db
+    DEV_GUILD_ID = 1469032638395191298 
 
-async def word_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
-    """Dynamically queries MongoDB to offer instant drop-down suggestions as the user types."""
-    try:
-        # Access the database attached to the bot client
-        db = interaction.client.db if hasattr(interaction.client, "db") else None
-        if not db or not current:
-            # If nothing typed yet, grab the 25 most recent words as a fallback shortcut
-            cursor = db.words.find({}, {"word": 1}).sort("_id", -1).limit(25) if db else None
-            if cursor:
-                return [app_commands.Choice(name=doc["word"], value=doc["word"]) for doc in await cursor.to_list(length=25)]
-            return []
-
-        # Case-insensitive prefix match against what they are currently typing
-        cursor = db.words.find({"word_lower": {"$regex": f"^{current.lower()}"}}, {"word": 1}).limit(25)
-        choices = [app_commands.Choice(name=doc["word"], value=doc["word"]) for doc in await cursor.to_list(length=25)]
-        return choices
-    except Exception as e:
-        logger.error(f"Autocomplete error: {e}")
-        return []
-
-
-class CardInteractionView(discord.ui.View):
-    """Adds persistent clickable Uppies and Share buttons underneath card layouts."""
-    def __init__(self, bot: commands.Bot, word_lower: str, initial_upvotes: int = 0):
-        super().__init__(timeout=None)
-        self.bot = bot
-        self.word_lower = word_lower
-        
-        # POLISH: Initialize the label to show the live database score immediately on load!
-        if initial_upvotes > 0:
-            self.uppies_button.label = f"Uppies ({initial_upvotes})"
-
-    @discord.ui.button(label="Uppies", style=discord.ButtonStyle.primary, emoji="🔺", custom_id="tbd_uppies_btn")
-    async def uppies_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(thinking=True, ephemeral=True)
+    @bot.event
+    async def setup_hook():
         try:
-            db = self.bot.db
+            # 1. Automatically import and register our modular Dictionary file layout
+            await bot.load_extension("cogs.dictionary")
+            logger.info("Successfully loaded extension: cogs.dictionary")
             
-            # Atomically increment upvote records inside MongoDB context
-            result = await db.words.find_one_and_update(
-                {"word_lower": self.word_lower},
-                {"$inc": {"upvotes": 1}},
-                return_document=True
-            )
+            # 2. Sync to your server guild instantly for testing updates
+            guild = discord.Object(id=DEV_GUILD_ID)
+            bot.tree.copy_global_to(guild=guild)
+            synced = await bot.tree.sync(guild=guild)
+            logger.info(f"Instant Guild Sync Complete! Loaded {len(synced)} command endpoints.")
+        except Exception as e:
+            logger.exception(f"Failed to cleanly spin up application extensions: {e}")
+
+    @bot.event
+    async def on_ready():
+        global _ready
+        _ready = True
+        
+        # Pull CardInteractionView out of cogs.dictionary to ensure persistent link tracking across reboots
+        try:
+            from cogs.dictionary import CardInteractionView
+            bot.add_view(CardInteractionView(bot, ""))
+        except Exception as e:
+            logger.error(f"Could not hook global view callback persistence framework: {e}")
             
-            if result:
-                new_total = result.get("upvotes", 0)
-                button.
+        logger.info(f"Discord bot ready as {bot.user}")
+
+    return bot
+
+async def start_bot(token: str, db):
+    global _bot
+    _bot = _build_bot(db)
+    await _bot.start(token)
+
+async def stop_bot():
+    global _bot, _ready
+    _ready = False
+    if _bot and not _bot.is_closed():
+        await _bot.close()
