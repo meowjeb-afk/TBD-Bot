@@ -76,14 +76,25 @@ def home():
     return {"status": "TBD Backend is running successfully!"}
 
 
-## --- TESTING PURGES / DELETE ROUTE ---
+# --- KEEP-AWAKE OPTIMIZATION ---
+
+@app.get("/health")
+def health_check():
+    """
+    Hit this URL every 5-10 minutes via an external pinger (like UptimeRobot)
+    to prevent your free-tier Render container from falling asleep!
+    """
+    return {"status": "alive and awake"}
+
+
+# --- TESTING PURGES / DELETE ROUTE ---
 
 @app.delete("/test/cleanup", status_code=status.HTTP_200_OK)
 async def dev_cleanup_route(purge_db: bool = False, purge_images: bool = True):
     """
     A destructive endpoint built purely for local testing.
     - purge_images: Wipes out the 'generated/' folder locally.
-    - purge_db: Drops the 'cards' collection from your MongoDB setup.
+    - purge_db: Drops the 'words' collection from your MongoDB setup.
     """
     # ⚠️ Quick check to prevent accidents in a production cluster
     if os.getenv("ENVIRONMENT") == "production":
@@ -113,8 +124,8 @@ async def dev_cleanup_route(purge_db: bool = False, purge_images: bool = True):
     if purge_db:
         if db is not None:
             try:
-                # Adjust 'cards' to match whatever your collection name actually is!
-                result = await db.cards.delete_many({})
+                # FIXED: Changed from db.cards to db.words to match your discord_bot.py collection
+                result = await db.words.delete_many({})
                 summary["db_purged"] = f"Successfully dropped {result.deleted_count} items from DB."
             except Exception as e:
                 summary["db_purged"] = f"Failed to clear MongoDB data: {str(e)}"
