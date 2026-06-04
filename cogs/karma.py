@@ -18,7 +18,7 @@ async def award_catnip(db, user_id: str, display_name: str, amount: int) -> int:
             upsert=True,
             return_document=True
         )
-        return result.get("catnip", 0)
+        return result.get("catnip", 0) if result else 0
     except Exception as e:
         logger.error(f"Failed to award Catnip to user {user_id}: {e}")
         return 0
@@ -41,9 +41,9 @@ class KarmaCog(commands.Cog):
         embed = discord.Embed(
             title="🌿 The Catnip Stash",
             description=f"{target.mention} has hoarded **{balance}** leaves of premium Catnip!",
-            color=discord.Color.from_str("#DCD0FF") # Soft purple accent
+            color=discord.Color.from_str("#DCD0FF")
         )
-        # Custom flavor text based on how much catnip they have
+        
         if balance == 0:
             status = "Completely sober. The fat purple cat ignores them entirely."
         elif balance < 50:
@@ -59,7 +59,6 @@ class KarmaCog(commands.Cog):
         await interaction.response.defer(thinking=True)
         db = self.bot.db
         
-        # Query top 10 catnip hoarders
         cursor = db.users.find({"catnip": {"$gt": 0}}).sort("catnip", -1).limit(10)
         top_users = await cursor.to_list(length=10)
         
@@ -77,11 +76,10 @@ class KarmaCog(commands.Cog):
         embed = discord.Embed(
             title="🔮 The Great Catnip Monopoly",
             description="\n".join(leaderboard_text),
-            color=discord.Color.from_str("#4A3B63") # Dark gothic purple
+            color=discord.Color.from_str("#4A3B63")
         )
         embed.set_footer(text="Keep contributing to become the ultimate Catnip Dealer.")
         await interaction.followup.send(embed=embed)
 
 async def setup(bot: commands.Bot):
-    """Registers the Karma Cog into the main bot pipeline."""
     await bot.add_cog(KarmaCog(bot))
