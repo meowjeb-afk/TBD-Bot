@@ -28,11 +28,15 @@ def _build_bot(db) -> commands.Bot:
     @bot.event
     async def setup_hook():
         try:
-            # 1. Automatically import and register our modular Dictionary file layout
+            # 1. Automatically import and register our modular Dictionary cog
             await bot.load_extension("cogs.dictionary")
             logger.info("Successfully loaded extension: cogs.dictionary")
             
-            # 2. Sync to your server guild instantly for testing updates
+            # 2. Automatically import and register our modular Affirmations cog
+            await bot.load_extension("cogs.affirmations")
+            logger.info("Successfully loaded extension: cogs.affirmations")
+            
+            # 3. Sync to your server guild instantly for testing updates
             guild = discord.Object(id=DEV_GUILD_ID)
             bot.tree.copy_global_to(guild=guild)
             synced = await bot.tree.sync(guild=guild)
@@ -45,10 +49,11 @@ def _build_bot(db) -> commands.Bot:
         global _ready
         _ready = True
         
-        # Pull CardInteractionView out of cogs.dictionary to ensure persistent link tracking across reboots
+        # Pull CardInteractionView out of cogs.dictionary to ensure persistent button tracking across reboots
         try:
             from cogs.dictionary import CardInteractionView
             bot.add_view(CardInteractionView(bot, ""))
+            logger.info("Persistent button listeners successfully hooked up.")
         except Exception as e:
             logger.error(f"Could not hook global view callback persistence framework: {e}")
             
