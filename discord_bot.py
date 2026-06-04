@@ -3,7 +3,7 @@ import logging
 import discord
 from discord.ext import commands
 
-# Silencing core startup log noise
+# Silencing core startup log noise to keep the MacBook console clean
 logging.getLogger("discord").setLevel(logging.ERROR)
 logging.getLogger("discord.client").setLevel(logging.ERROR)
 logging.getLogger("discord.ext.commands.bot").setLevel(logging.ERROR)
@@ -21,7 +21,7 @@ def _build_bot(db) -> commands.Bot:
     """Configures structural application endpoints, gateways, and hooks."""
     intents = discord.Intents.default()
     intents.voice_states = False  
-    intents.message_content = False
+    intents.message_content = False  # Running strictly on modern Application Commands
     
     bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
     bot.db = db
@@ -30,7 +30,7 @@ def _build_bot(db) -> commands.Bot:
     @bot.event
     async def setup_hook():
         try:
-            # Dynamically register all 6 core modules side-by-side
+            # Dynamically register all 7 core modules side-by-side
             await bot.load_extension("cogs.dictionary")
             logger.info("Successfully loaded extension: cogs.dictionary")
             
@@ -48,6 +48,9 @@ def _build_bot(db) -> commands.Bot:
             
             await bot.load_extension("cogs.dice")
             logger.info("Successfully loaded extension: cogs.dice")
+            
+            await bot.load_extension("cogs.free_games")
+            logger.info("Successfully loaded extension: cogs.free_games")
             
             # Sync to your server guild instantly for testing updates
             guild = discord.Object(id=DEV_GUILD_ID)
