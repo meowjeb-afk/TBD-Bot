@@ -28,23 +28,23 @@ def _build_bot(db) -> commands.Bot:
     @bot.event
     async def setup_hook():
         try:
-            # 1. Automatically import and register our modular Dictionary cog
+            # Dynamically register all 5 core modules side-by-side
             await bot.load_extension("cogs.dictionary")
             logger.info("Successfully loaded extension: cogs.dictionary")
             
-            # 2. Automatically import and register our modular Affirmations cog
             await bot.load_extension("cogs.affirmations")
             logger.info("Successfully loaded extension: cogs.affirmations")
             
-            # 3. Automatically import and register our modular Virtual Pet cog
             await bot.load_extension("cogs.virtual_pet")
             logger.info("Successfully loaded extension: cogs.virtual_pet")
             
-            # 4. Automatically import and register our modular Tarot cog
             await bot.load_extension("cogs.tarot")
             logger.info("Successfully loaded extension: cogs.tarot")
             
-            # 5. Sync to your server guild instantly for testing updates
+            await bot.load_extension("cogs.karma")
+            logger.info("Successfully loaded extension: cogs.karma")
+            
+            # Sync to your server guild instantly for testing updates
             guild = discord.Object(id=DEV_GUILD_ID)
             bot.tree.copy_global_to(guild=guild)
             synced = await bot.tree.sync(guild=guild)
@@ -66,7 +66,7 @@ def _build_bot(db) -> commands.Bot:
             from cogs.virtual_pet import PetControlPanel
             pet_cog = bot.get_cog("VirtualPetCog")
             if pet_cog:
-                bot.add_view(PetControlPanel(pet_cog, {}))
+                bot.add_view(PetControlPanel(pet_cog))
                 
             logger.info("Persistent button listeners successfully hooked up.")
         except Exception as e:
