@@ -40,7 +40,11 @@ def _build_bot(db) -> commands.Bot:
             await bot.load_extension("cogs.virtual_pet")
             logger.info("Successfully loaded extension: cogs.virtual_pet")
             
-            # 4. Sync to your server guild instantly for testing updates
+            # 4. Automatically import and register our modular Tarot cog
+            await bot.load_extension("cogs.tarot")
+            logger.info("Successfully loaded extension: cogs.tarot")
+            
+            # 5. Sync to your server guild instantly for testing updates
             guild = discord.Object(id=DEV_GUILD_ID)
             bot.tree.copy_global_to(guild=guild)
             synced = await bot.tree.sync(guild=guild)
